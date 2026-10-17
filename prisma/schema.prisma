@@ -1,0 +1,185 @@
+// Flowsy Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CASH
+  BANK
+  SAVINGS
+  MOBILE_WALLET
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum CommitmentStatus {
+  PENDING
+  PAID
+  CANCELLED
+  OVERDUE
+}
+
+enum RecurrenceFrequency {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  currency     String   @default("EGP")
+  timezone     String   @default("Africa/Cairo")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens     RefreshToken[]
+  financialAccounts FinancialAccount[]
+  categories        Category[]
+  transactions      Transaction[]
+  commitments       Commitment[]
+  budgets           Budget[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model FinancialAccount {
+  id                     String      @id @default(uuid())
+  userId                 String
+  user                   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                   String
+  type                   AccountType @default(CASH)
+  currency               String      @default("EGP")
+  initialBalance         Decimal     @default(0.00) @db.Decimal(14, 2)
+  currentBalance         Decimal     @default(0.00) @db.Decimal(14, 2)
+  isArchived             Boolean     @default(false)
+  excludeFromSafeToSpend Boolean     @default(false)
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  transactions            Transaction[] @relation("AccountTransactions")
+  destinationTransactions Transaction[] @relation("DestinationAccountTransactions")
+  commitments             Commitment[]
+
+  @@unique([userId, name])
+  @@index([userId, isArchived])
+  @@map("financial_accounts")
+}
+
+model Category {
+  id         String       @id @default(uuid())
+  userId     String?      // Null for system-provided default categories
+  user       User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  type       CategoryType
+  icon       String?
+  isArchived Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  transactions Transaction[]
+  commitments  Commitment[]
+  budgets      Budget[]
+
+  @@index([userId, type, isArchived])
+  @@map("categories")
+}
+
+model Transaction {
+  id                   String          @id @default(uuid())
+  userId               String
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId            String
+  account              FinancialAccount @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Restrict)
+  categoryId           String?
+  category             Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  type                 TransactionType
+  amount               Decimal         @db.Decimal(14, 2)
+  currency             String          @default("EGP")
+  note                 String?
+  transactionDate      DateTime        @default(now())
+  destinationAccountId String?
+  destinationAccount   FinancialAccount? @relation("DestinationAccountTransactions", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  paidCommitments      Commitment[]    @relation("PaidCommitmentTransaction")
+
+  @@index([userId, transactionDate])
+  @@index([userId, accountId])
+  @@index([userId, categoryId])
+  @@map("transactions")
+}
+
+model Commitment {
+  id                String              @id @default(uuid())
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name              String
+  amount            Decimal             @db.Decimal(14, 2)
+  currency          String              @default("EGP")
+  dueDate           DateTime
+  status            CommitmentStatus    @default(PENDING)
+  recurrence        RecurrenceFrequency @default(NONE)
+  accountId         String?
+  account           FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId        String?
+  category          Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  paidTransactionId String?
+  paidTransaction   Transaction?        @relation("PaidCommitmentTransaction", fields: [paidTransactionId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([userId, status, dueDate])
+  @@map("commitments")
+}
+
+model Budget {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  amount     Decimal   @db.Decimal(14, 2)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  startDate  DateTime
+  endDate    DateTime
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, startDate, endDate])
+  @@map("budgets")
+}

@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: flowsy-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: flowsy
+    ports:
+      - '5432:5432'
+    volumes:
+      - flowsy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d flowsy']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flowsy-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/flowsy?schema=public
+      JWT_ACCESS_SECRET: flowsy_production_super_secret_access_jwt_key_min_32_chars!
+      JWT_ACCESS_EXPIRATION: 15m
+      JWT_REFRESH_SECRET: flowsy_production_super_secret_refresh_jwt_key_min_32_chars!
+      JWT_REFRESH_EXPIRATION: 7d
+      CORS_ORIGIN: '*'
+      DEFAULT_CURRENCY: EGP
+      DEFAULT_TIMEZONE: Africa/Cairo
+    ports:
+      - '3000:3000'
+
+volumes:
+  flowsy_pgdata:
