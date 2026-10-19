@@ -126,7 +126,11 @@ export async function apiClient<T>(
   };
 
   if (!options.skipAuth) {
-    const token = tokenStorage.getAccessToken();
+    let token = tokenStorage.getAccessToken();
+    if (!token) {
+      await tokenStorage.ensureInitialized();
+      token = tokenStorage.getAccessToken();
+    }
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }

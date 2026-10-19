@@ -5,10 +5,14 @@ import { Screen } from '../../components/primitives/Screen';
 import { AppText } from '../../components/primitives/AppText';
 import { Field } from '../../components/primitives/Field';
 import { Button } from '../../components/primitives/Button';
+import { Card } from '../../components/primitives/Card';
+import { Icon } from '../../components/primitives/Icon';
 import { getAccounts, createAccount, deleteAccount } from '../../api/accounts';
 import { AccountResponseDto } from '../../api/types';
 import { normalizeAmountInput, toArabicNumberSeparators } from '../../utils/format';
 import { toCents } from '../../utils/money';
+import { strings } from '../../utils/strings.ar';
+import { haptics } from '../../utils/haptics';
 
 interface StartingBalancesScreenProps {
   onComplete: () => void;
@@ -17,7 +21,7 @@ interface StartingBalancesScreenProps {
 export const StartingBalancesScreen: React.FC<StartingBalancesScreenProps> = ({
   onComplete,
 }) => {
-  const { spacing, colors } = useTheme();
+  const { spacing, colors, radii } = useTheme();
 
   const [accounts, setAccounts] = useState<AccountResponseDto[]>([]);
   const [balances, setBalances] = useState<Record<string, string>>({});
@@ -48,8 +52,6 @@ export const StartingBalancesScreen: React.FC<StartingBalancesScreenProps> = ({
   const handleComplete = async () => {
     setSaving(true);
     try {
-      // Decision #1 in Appendix A: For the auto-created untouched Cash account with 0.00,
-      // if the user entered an initial amount > 0, delete and recreate with entered opening balance.
       for (const acc of accounts) {
         const enteredVal = balances[acc.id]?.trim();
         if (enteredVal && acc.initialBalance === '0.00' && acc.currentBalance === '0.00') {
@@ -70,6 +72,7 @@ export const StartingBalancesScreen: React.FC<StartingBalancesScreenProps> = ({
           }
         }
       }
+      haptics.notificationSuccess();
       onComplete();
     } catch {
       onComplete();
@@ -79,46 +82,78 @@ export const StartingBalancesScreen: React.FC<StartingBalancesScreenProps> = ({
   };
 
   return (
-    <Screen scroll contentContainerStyle={[styles.container, { padding: spacing.xl }]}>
+    <Screen scroll contentContainerStyle={[styles.container, { paddingHorizontal: spacing.xl }]}>
+      {/* Top Section */}
       <View style={styles.topSection}>
+        {/* Step pill */}
+        <View style={[styles.stepPill, { backgroundColor: colors.sunken, borderRadius: radii.xs }]}>
+          <AppText variant="caption" style={{ color: colors.forest, fontWeight: '700' }}>
+            الخطوة الأخيرة • تهيئة الحساب
+          </AppText>
+        </View>
+
         <AppText variant="title1" style={styles.title}>
-          رصيدك دلوقتي كام؟
+          {strings.auth.startingBalancesTitle}
         </AppText>
         <AppText variant="body" tone="secondary" style={styles.subtitle}>
-          ده بيبقى رصيد البداية. مش هتقدر تعدله بعدين، لكن تقدر تصحّح الرصيد في أي وقت.
+          {strings.auth.startingBalancesSubtitle}
         </AppText>
       </View>
 
+      {/* Info Notice Box */}
+      <View style={[styles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: radii.md }]}>
+        <Icon name="information-circle-outline" size={20} color={colors.forest} />
+        <AppText variant="caption" tone="secondary" style={{ flex: 1, lineHeight: 20 }}>
+          هذا المبلغ سيكون رصيد البداية المتاح في حسابك النقدي الأساسي لحساب "المتاح للصرف" بدقة فور دخولك.
+        </AppText>
+      </View>
+
+      {/* Accounts List */}
       <View style={styles.accountsList}>
         {accounts.map((acc) => (
-          <View key={acc.id} style={styles.accountRow}>
+          <Card key={acc.id} variant="surface" style={styles.accountCard}>
+            <View style={styles.accountHeader}>
+              <View style={[styles.accountIcon, { backgroundColor: colors.sunken, borderRadius: radii.sm }]}>
+                <Icon name="wallet-outline" size={20} color={colors.forest} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <AppText variant="bodyStrong">{acc.name}</AppText>
+                <AppText variant="caption" tone="secondary">العملة: {acc.currency}</AppText>
+              </View>
+            </View>
+
             <Field
-              label={acc.name}
+              label="الرصيد الفعلي الحالي"
               placeholder="0.00"
               value={toArabicNumberSeparators(balances[acc.id] || '')}
               onChangeText={(val) => {
                 const norm = normalizeAmountInput(val);
                 setBalances((prev) => ({ ...prev, [acc.id]: norm }));
               }}
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               isLtr
-              helper={`العملة: ${acc.currency}`}
+              containerStyle={{ marginBottom: 0, marginTop: 8 }}
             />
-          </View>
+          </Card>
         ))}
       </View>
 
+      {/* Bottom Actions */}
       <View style={styles.bottomSection}>
         <Button
-          title="كمّل"
+          title={strings.auth.saveStartingBalances}
+          variant="primary"
           onPress={handleComplete}
           loading={saving || loading}
           style={{ width: '100%', marginBottom: spacing.sm }}
         />
         <Button
-          title="بعدين (تخطي)"
-          variant="text"
-          onPress={onComplete}
+          title={strings.auth.skipStartingBalances}
+          variant="ghost"
+          onPress={() => {
+            haptics.impactLight();
+            onComplete();
+          }}
           style={{ width: '100%' }}
         />
       </View>
@@ -128,12 +163,18 @@ export const StartingBalancesScreen: React.FC<StartingBalancesScreenProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 32,
+    paddingVertical: 24,
     justifyContent: 'space-between',
   },
   topSection: {
-    marginTop: 20,
-    marginBottom: 24,
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  stepPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 12,
   },
   title: {
     marginBottom: 8,
@@ -143,14 +184,36 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     lineHeight: 24,
   },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 24,
+  },
   accountsList: {
     marginBottom: 32,
+    gap: 12,
   },
-  accountRow: {
+  accountCard: {
+    padding: 16,
+  },
+  accountHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     marginBottom: 8,
+  },
+  accountIcon: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomSection: {
     width: '100%',
-    paddingBottom: 16,
+    paddingBottom: 24,
+    paddingTop: 12,
   },
 });

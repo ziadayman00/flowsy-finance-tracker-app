@@ -16,6 +16,10 @@ try {
 }
 
 export const tokenStorage = {
+  /**
+   * Loads tokens from persistent storage (SecureStore on native, localStorage on web).
+   * Caches in memory for fast synchronous access.
+   */
   async getTokens(): Promise<AuthTokens | null> {
     if (memoryTokens) return memoryTokens;
 
@@ -55,6 +59,17 @@ export const tokenStorage = {
     return null;
   },
 
+  /**
+   * Ensures tokens are loaded into memory if not already present.
+   */
+  async ensureInitialized(): Promise<AuthTokens | null> {
+    if (memoryTokens) return memoryTokens;
+    return this.getTokens();
+  },
+
+  /**
+   * Fast synchronous accessor from memory cache.
+   */
   getAccessToken(): string | null {
     if (memoryTokens?.accessToken) return memoryTokens.accessToken;
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
@@ -67,6 +82,17 @@ export const tokenStorage = {
     return null;
   },
 
+  /**
+   * Asynchronous accessor that reads from storage if memory is not yet warm.
+   */
+  async getAccessTokenAsync(): Promise<string | null> {
+    const tokens = await this.ensureInitialized();
+    return tokens?.accessToken ?? null;
+  },
+
+  /**
+   * Fast synchronous accessor for refresh token from memory cache.
+   */
   getRefreshToken(): string | null {
     if (memoryTokens?.refreshToken) return memoryTokens.refreshToken;
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
@@ -79,6 +105,9 @@ export const tokenStorage = {
     return null;
   },
 
+  /**
+   * Sets new tokens into both memory and persistent secure storage.
+   */
   async setTokens(tokens: AuthTokens | null): Promise<void> {
     memoryTokens = tokens;
 
@@ -111,6 +140,9 @@ export const tokenStorage = {
     }
   },
 
+  /**
+   * Clears tokens from memory and persistent secure storage.
+   */
   async clearTokens(): Promise<void> {
     memoryTokens = null;
 

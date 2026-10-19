@@ -61,31 +61,40 @@ const AppNavigator: React.FC = () => {
 
   // S00 Session gate
   useEffect(() => {
+    let isMounted = true;
+
     const checkSession = async () => {
       try {
-        const token = await tokenStorage.getAccessToken();
-        if (!token) {
-          setAuthState('WELCOME');
+        const tokens = await tokenStorage.getTokens();
+        if (!tokens?.accessToken) {
+          if (isMounted) setAuthState('WELCOME');
           return;
         }
 
+        // Verify active token validity
         await authApi.getMe();
         const accs = await accountsApi.getAccounts();
         const active = accs.filter((a) => !a.isArchived);
-        if (active.length === 0) {
-          setAuthState('STARTING_BALANCES');
-        } else {
-          setAuthState('APP');
+
+        if (isMounted) {
+          setAuthState(active.length > 0 ? 'APP' : 'STARTING_BALANCES');
         }
       } catch {
-        setAuthState('WELCOME');
+        // If session invalid and refresh failed, clear local state
+        await tokenStorage.clearTokens();
+        if (isMounted) setAuthState('WELCOME');
       }
     };
 
     checkSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    await tokenStorage.clearTokens();
     setSelectedAccountId(null);
     setSettingsOpen(false);
     setCategoriesOpen(false);
@@ -97,13 +106,13 @@ const AppNavigator: React.FC = () => {
     return (
       <View style={[styles.splashContainer, { backgroundColor: colors.background }]}>
         <AppText variant="caption" tone="secondary">
-          دفتر الصرف
+          دفتر الصرف الذكي
         </AppText>
         <AppText variant="display" tone="brand" style={{ letterSpacing: 0.4, marginTop: 6 }}>
           Flowsy
         </AppText>
         <AppText variant="body" tone="secondary" style={{ marginTop: 8 }}>
-          اعرف المتاح فعلاً بعد التزاماتك
+          {strings.auth.welcomeHeadline}
         </AppText>
         <ActivityIndicator size="small" color={colors.brand} style={{ marginTop: 24 }} />
       </View>
@@ -133,6 +142,7 @@ const AppNavigator: React.FC = () => {
           }
         }}
         onGoToRegister={() => setAuthState('REGISTER')}
+        onBack={() => setAuthState('WELCOME')}
       />
     );
   }
@@ -142,6 +152,7 @@ const AppNavigator: React.FC = () => {
       <RegisterScreen
         onRegisterSuccess={() => setAuthState('STARTING_BALANCES')}
         onGoToLogin={() => setAuthState('LOGIN')}
+        onBack={() => setAuthState('WELCOME')}
       />
     );
   }
