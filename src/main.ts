@@ -8,9 +8,27 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
+import helmet from 'helmet';
+import { parseCorsOrigins, createCorsOptions } from './config/cors.config';
+
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  // HTTP Security Headers (SEC-02)
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
+          scriptSrc: [`'self'`, `'unsafe-inline'`, `'unsafe-eval'`],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
 
   // Enable graceful shutdown hooks
   app.enableShutdownHooks();
@@ -34,13 +52,12 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // CORS Configuration
-  const corsOrigin = process.env.CORS_ORIGIN || '*';
-  app.enableCors({
-    origin: corsOrigin === '*' ? true : corsOrigin.split(','),
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
+  // CORS Configuration - Explicit validated allowlist
+  const allowedOrigins = parseCorsOrigins(
+    process.env.CORS_ORIGIN,
+    process.env.NODE_ENV,
+  );
+  app.enableCors(createCorsOptions(allowedOrigins));
 
   // OpenAPI / Swagger Documentation
   const swaggerConfig = new DocumentBuilder()

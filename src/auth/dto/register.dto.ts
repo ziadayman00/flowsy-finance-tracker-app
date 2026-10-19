@@ -8,6 +8,11 @@ import {
   MinLength,
   MaxLength,
 } from 'class-validator';
+import {
+  IsSupportedCurrency,
+  SUPPORTED_CURRENCIES,
+} from '../../common/validators/is-supported-currency.validator';
+import { IsSupportedTimezone } from '../../common/validators/is-supported-timezone.validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com', description: 'User email address' })
@@ -35,13 +40,23 @@ export class RegisterDto {
   @MaxLength(50, { message: 'Display name must not exceed 50 characters' })
   displayName!: string;
 
-  @ApiPropertyOptional({ example: 'EGP', default: 'EGP' })
+  @ApiPropertyOptional({
+    example: 'EGP',
+    default: 'EGP',
+    enum: SUPPORTED_CURRENCIES,
+    description: `Currency code. Supported values: ${SUPPORTED_CURRENCIES.join(', ')}`,
+  })
   @IsOptional()
-  @IsString()
+  @IsSupportedCurrency()
   currency?: string = 'EGP';
 
-  @ApiPropertyOptional({ example: 'Africa/Cairo', default: 'Africa/Cairo' })
+  @ApiPropertyOptional({
+    example: 'Africa/Cairo',
+    default: 'Africa/Cairo',
+    description: 'Valid IANA timezone identifier',
+  })
   @IsOptional()
-  @IsString()
+  @IsSupportedTimezone()
   timezone?: string = 'Africa/Cairo';
 }
+

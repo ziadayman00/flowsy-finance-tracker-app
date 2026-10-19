@@ -56,6 +56,7 @@ describe('BudgetsService', () => {
         id: 'b-1',
         name: 'بقالة',
         amount: new Prisma.Decimal('4000.00'),
+        currency: 'EGP',
         categoryId: 'cat-1',
         category: { name: 'بقالة ومستلزمات' },
         startDate: new Date('2026-10-01T00:00:00.000Z'),
@@ -78,9 +79,48 @@ describe('BudgetsService', () => {
       });
 
       expect(result.amount).toBe('4000.00');
+      expect(result.currency).toBe('EGP');
       expect(result.spent).toBe('1000.00');
       expect(result.remaining).toBe('3000.00');
       expect(result.percentage).toBe(25);
+
+      // GAP-03: verify the aggregation was called with currency filter
+      expect(prismaService.transaction.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ currency: 'EGP' }),
+        }),
+      );
+    });
+
+    it('should not include USD transactions in an EGP budget (GAP-03 currency isolation)', async () => {
+      const egpBudget = {
+        id: 'b-2',
+        name: 'مصاريف',
+        amount: new Prisma.Decimal('5000.00'),
+        currency: 'EGP',
+        categoryId: null,
+        category: null,
+        startDate: new Date('2026-10-01T00:00:00.000Z'),
+        endDate: new Date('2026-10-31T23:59:59.000Z'),
+        isArchived: false,
+      };
+
+      prismaService.budget.findFirst.mockResolvedValue(egpBudget);
+      // Only EGP transactions should contribute — mock returns EGP-scoped total
+      prismaService.transaction.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal('2000.00') },
+      });
+
+      const result = await service.findById('user-1', 'b-2');
+
+      expect(result.currency).toBe('EGP');
+      expect(result.spent).toBe('2000.00');
+      expect(result.remaining).toBe('3000.00');
+
+      // Verify currency filter was applied in the DB query
+      const callArgs = prismaService.transaction.aggregate.mock.calls[0][0];
+      expect(callArgs.where.currency).toBe('EGP');
     });
   });
 });
+

@@ -11,6 +11,10 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import {
+  IsSupportedCurrency,
+  SUPPORTED_CURRENCIES,
+} from '../../common/validators/is-supported-currency.validator';
 
 export class CreateBudgetDto {
   @ApiProperty({ example: 'ميزانية البقالة لشهر أكتوبر', description: 'Budget name' })
@@ -30,6 +34,16 @@ export class CreateBudgetDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive({ message: 'Budget amount must be strictly greater than 0' })
   amount!: number;
+
+  @ApiPropertyOptional({
+    example: 'EGP',
+    default: 'EGP',
+    enum: SUPPORTED_CURRENCIES,
+    description: `Currency the budget is denominated in. Must match the transaction currency to be tracked correctly. Supported values: ${SUPPORTED_CURRENCIES.join(', ')}`,
+  })
+  @IsOptional()
+  @IsSupportedCurrency()
+  currency?: string = 'EGP';
 
   @ApiPropertyOptional({
     example: '123e4567-e89b-12d3-a456-426614174001',
@@ -53,3 +67,4 @@ export class CreateBudgetDto {
   @IsISO8601()
   endDate!: string;
 }
+

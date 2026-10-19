@@ -120,5 +120,76 @@ describe('DashboardService', () => {
       expect(summary.safeToSpend.isDeficit).toBe(true);
       expect(summary.safeToSpend.deficitAmount).toBe('2500.00');
     });
+
+    it('should isolate non-base currencies and report them separately without mixing USD and EGP (FIN-02)', async () => {
+      // User currency is EGP
+      prismaService.financialAccount.findMany.mockResolvedValue([
+        {
+          id: 'acc-egp-cash',
+          name: 'كاش مصري',
+          type: AccountType.CASH,
+          currency: 'EGP',
+          currentBalance: new Prisma.Decimal('5000.00'),
+          excludeFromSafeToSpend: false,
+        },
+        {
+          id: 'acc-usd-card',
+          name: 'USD Debit Card',
+          type: AccountType.BANK,
+          currency: 'USD',
+          currentBalance: new Prisma.Decimal('200.00'),
+          excludeFromSafeToSpend: false,
+        },
+        {
+          id: 'acc-usd-savings',
+          name: 'USD Safe Box',
+          type: AccountType.SAVINGS,
+          currency: 'USD',
+          currentBalance: new Prisma.Decimal('100.00'),
+          excludeFromSafeToSpend: true,
+        },
+      ]);
+
+      // Only commitments in base currency (EGP) are returned for safe-to-spend
+      prismaService.commitment.findMany.mockImplementation(async (args: any) => {
+        if (args?.where?.currency === 'EGP') {
+          return [{ id: 'comm-egp', amount: new Prisma.Decimal('1000.00') }];
+        }
+        return [];
+      });
+
+      prismaService.transaction.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: new Prisma.Decimal('8000.00') } })
+        .mockResolvedValueOnce({ _sum: { amount: new Prisma.Decimal('3000.00') } });
+
+      const summary = await service.getSummary('user-1');
+
+      // Base currency check
+      expect(summary.baseCurrency).toBe('EGP');
+      expect(summary.safeToSpend.currency).toBe('EGP');
+
+      // Liquid balance should ONLY reflect EGP (5000.00), NEVER 5200.00
+      expect(summary.totalLiquidBalance).toBe('5000.00');
+      expect(summary.totalProtectedSavings).toBe('0.00');
+
+      // Safe-to-Spend = 5000 - 1000 = 4000
+      expect(summary.safeToSpend.safeToSpend).toBe('4000.00');
+      expect(summary.safeToSpend.totalLiquidFunds).toBe('5000.00');
+      expect(summary.safeToSpend.totalPendingCommitments).toBe('1000.00');
+
+      // Excluded currencies must clearly report USD breakdown
+      expect(summary.excludedCurrenciesSummary).toBeDefined();
+      expect(summary.excludedCurrenciesSummary.length).toBe(1);
+      const usdSummary = summary.excludedCurrenciesSummary[0];
+      expect(usdSummary.currency).toBe('USD');
+      expect(usdSummary.totalLiquidBalance).toBe('200.00');
+      expect(usdSummary.totalProtectedSavings).toBe('100.00');
+      expect(usdSummary.accountCount).toBe(2);
+
+      // Account items should have currency set
+      expect(summary.accounts[0].currency).toBe('EGP');
+      expect(summary.accounts[1].currency).toBe('USD');
+      expect(summary.accounts[2].currency).toBe('USD');
+    });
   });
 });

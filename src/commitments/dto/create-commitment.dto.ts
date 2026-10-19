@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CommitmentStatus, RecurrenceFrequency } from '@prisma/client';
+import { RecurrenceFrequency } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
   IsEnum,

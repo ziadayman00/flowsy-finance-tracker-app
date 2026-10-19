@@ -5,7 +5,6 @@ import { Response } from 'express';
 
 describe('HealthController', () => {
   let controller: HealthController;
-  let prismaService: PrismaService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -21,7 +20,6 @@ describe('HealthController', () => {
     }).compile();
 
     controller = module.get<HealthController>(HealthController);
-    prismaService = module.get<PrismaService>(PrismaService);
   });
 
   it('should be defined', () => {

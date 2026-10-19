@@ -58,6 +58,7 @@ model User {
   transactions      Transaction[]
   commitments       Commitment[]
   budgets           Budget[]
+  savingsGoals      SavingsGoal[]
 
   @@map("users")
 }
@@ -92,6 +93,7 @@ model FinancialAccount {
   transactions            Transaction[] @relation("AccountTransactions")
   destinationTransactions Transaction[] @relation("DestinationAccountTransactions")
   commitments             Commitment[]
+  savingsGoals            SavingsGoal[]
 
   @@unique([userId, name])
   @@index([userId, isArchived])
@@ -140,6 +142,7 @@ model Transaction {
   @@index([userId, transactionDate])
   @@index([userId, accountId])
   @@index([userId, categoryId])
+  @@index([accountId, transactionDate])
   @@map("transactions")
 }
 
@@ -163,6 +166,8 @@ model Commitment {
   updatedAt         DateTime            @updatedAt
 
   @@index([userId, status, dueDate])
+  @@index([paidTransactionId])
+  @@index([userId, currency, status])
   @@map("commitments")
 }
 
@@ -172,6 +177,7 @@ model Budget {
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name       String
   amount     Decimal   @db.Decimal(14, 2)
+  currency   String    @default("EGP")
   categoryId String?
   category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   startDate  DateTime
@@ -182,4 +188,23 @@ model Budget {
 
   @@index([userId, startDate, endDate])
   @@map("budgets")
+}
+
+model SavingsGoal {
+  id          String           @id @default(uuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  name        String
+  targetAmount Decimal         @db.Decimal(14, 2)
+  targetDate  DateTime?
+  note        String?
+  isArchived  Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId, isArchived])
+  @@index([accountId])
+  @@map("savings_goals")
 }

@@ -7,6 +7,7 @@ import {
   MinLength,
   validateSync,
 } from 'class-validator';
+import { parseCorsOrigins } from './cors.config';
 
 export enum Environment {
   Development = 'development',
@@ -44,7 +45,7 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  CORS_ORIGIN: string = '*';
+  CORS_ORIGIN?: string;
 
   @IsString()
   @IsOptional()
@@ -72,6 +73,17 @@ export function validate(config: Record<string, unknown>) {
       )
       .join('; ');
     throw new Error(`Environment validation failed: ${formattedErrors}`);
+  }
+
+  // Strict CORS allowlist validation for environment
+  try {
+    parseCorsOrigins(
+      config.CORS_ORIGIN as string | undefined,
+      validatedConfig.NODE_ENV,
+    );
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Environment validation failed: CORS_ORIGIN: ${message}`);
   }
 
   return validatedConfig;

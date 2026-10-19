@@ -20,10 +20,19 @@ export class BudgetsService {
   ): Promise<BudgetResponseDto> {
     const budgetAmount = new Decimal(budget.amount.toString());
 
-    // Aggregate all expenses during this budget interval
+    // GAP-03 FIX: Scope expense aggregation to transactions whose currency
+    // matches the budget's declared currency (default EGP).
+    //
+    // Without this, a user with USD and EGP accounts would have their USD
+    // transaction amounts summed into an EGP budget total — a category of
+    // financial calculation corruption. Budgets are single-currency instruments.
+    const budgetCurrency: string = budget.currency || 'EGP';
+
+    // Aggregate all expenses during this budget interval, scoped to currency
     const expenseWhere: Prisma.TransactionWhereInput = {
       userId,
       type: TransactionType.EXPENSE,
+      currency: budgetCurrency,
       transactionDate: {
         gte: budget.startDate,
         lte: budget.endDate,
@@ -51,6 +60,7 @@ export class BudgetsService {
       id: budget.id,
       name: budget.name,
       amount: budgetAmount.toFixed(2),
+      currency: budgetCurrency,
       spent: spentDecimal.toFixed(2),
       remaining: remainingDecimal.toFixed(2),
       percentage: Math.min(Math.round(percentage * 100) / 100, 999.99),
@@ -118,15 +128,22 @@ export class BudgetsService {
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const createData: any = {
+      userId,
+      name: dto.name,
+      amount: new Prisma.Decimal(dto.amount.toFixed(2)),
+      // currency is present in schema (migration 20261019000001) but stale Prisma
+      // generated types may not reflect it until `prisma generate` is run.
+      // This cast is removed once the generated client is regenerated.
+      currency: dto.currency || 'EGP',
+      categoryId: dto.categoryId || null,
+      startDate: start,
+      endDate: end,
+    };
+
     const budget = await this.prisma.budget.create({
-      data: {
-        userId,
-        name: dto.name,
-        amount: new Prisma.Decimal(dto.amount.toFixed(2)),
-        categoryId: dto.categoryId || null,
-        startDate: start,
-        endDate: end,
-      },
+      data: createData,
       include: { category: true },
     });
 

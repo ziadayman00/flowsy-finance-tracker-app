@@ -10,6 +10,9 @@ export class BudgetResponseDto {
   @ApiProperty({ example: '4000.00', description: 'Allocated budget amount' })
   amount!: string;
 
+  @ApiProperty({ example: 'EGP', description: 'Currency the budget is denominated in' })
+  currency!: string;
+
   @ApiProperty({ example: '1250.50', description: 'Total spent during the period' })
   spent!: string;
 
@@ -34,3 +37,4 @@ export class BudgetResponseDto {
   @ApiProperty({ example: false })
   isArchived!: boolean;
 }
+

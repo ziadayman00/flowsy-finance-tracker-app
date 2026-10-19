@@ -25,34 +25,81 @@ export class DashboardService {
       orderBy: { createdAt: 'asc' },
     });
 
-    let liquidFunds = new Decimal(0);
-    let protectedSavings = new Decimal(0);
+    let baseLiquidFunds = new Decimal(0);
+    let baseProtectedSavings = new Decimal(0);
+
+    // Group non-base currency balances
+    const nonBaseBalances: Record<
+      string,
+      { liquid: Decimal; protected: Decimal; count: number }
+    > = {};
 
     const accountSummaries = accounts.map((acc) => {
       const balance = new Decimal(acc.currentBalance.toString());
-      if (acc.excludeFromSafeToSpend) {
-        protectedSavings = protectedSavings.plus(balance);
+      const accountCurrency = acc.currency || 'EGP';
+      const isBaseCurrency = accountCurrency === userCurrency;
+
+      if (isBaseCurrency) {
+        if (acc.excludeFromSafeToSpend) {
+          baseProtectedSavings = baseProtectedSavings.plus(balance);
+        } else {
+          baseLiquidFunds = baseLiquidFunds.plus(balance);
+        }
       } else {
-        liquidFunds = liquidFunds.plus(balance);
+        if (!nonBaseBalances[accountCurrency]) {
+          nonBaseBalances[accountCurrency] = {
+            liquid: new Decimal(0),
+            protected: new Decimal(0),
+            count: 0,
+          };
+        }
+        nonBaseBalances[accountCurrency].count += 1;
+        if (acc.excludeFromSafeToSpend) {
+          nonBaseBalances[accountCurrency].protected = nonBaseBalances[
+            accountCurrency
+          ].protected.plus(balance);
+        } else {
+          nonBaseBalances[accountCurrency].liquid = nonBaseBalances[
+            accountCurrency
+          ].liquid.plus(balance);
+        }
       }
 
       return {
         id: acc.id,
         name: acc.name,
         type: acc.type,
+        currency: accountCurrency,
         currentBalance: balance.toFixed(2),
         excludeFromSafeToSpend: acc.excludeFromSafeToSpend,
       };
     });
 
-    // 2. Fetch outstanding qualifying commitments (PENDING or OVERDUE)
-    // By default, obligations within the current month / cycle
+    const excludedCurrenciesSummary = Object.entries(nonBaseBalances).map(
+      ([curr, data]) => ({
+        currency: curr,
+        totalLiquidBalance: data.liquid.toFixed(2),
+        totalProtectedSavings: data.protected.toFixed(2),
+        accountCount: data.count,
+      }),
+    );
+
+    // 2. Fetch outstanding qualifying commitments matching base reporting currency
     const now = new Date();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const endOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
 
     const pendingCommitments = await this.prisma.commitment.findMany({
       where: {
         userId,
+        currency: userCurrency,
         status: { in: [CommitmentStatus.PENDING, CommitmentStatus.OVERDUE] },
         dueDate: { lte: endOfMonth },
       },
@@ -66,14 +113,14 @@ export class DashboardService {
     }
 
     // 3. Compute Safe-to-Spend ("تقدر تصرف كام؟")
-    const spendableDiff = liquidFunds.minus(totalPendingCommitments);
+    const spendableDiff = baseLiquidFunds.minus(totalPendingCommitments);
     const isDeficit = spendableDiff.isNegative();
     const deficitAmount = isDeficit ? spendableDiff.abs() : new Decimal(0);
 
     const safeToSpend: SafeToSpendBreakdownDto = {
       safeToSpend: spendableDiff.toFixed(2),
       currency: userCurrency,
-      totalLiquidFunds: liquidFunds.toFixed(2),
+      totalLiquidFunds: baseLiquidFunds.toFixed(2),
       totalPendingCommitments: totalPendingCommitments.toFixed(2),
       pendingCommitmentsCount: pendingCommitments.length,
       isDeficit,
@@ -81,13 +128,22 @@ export class DashboardService {
       calculatedAt: now,
     };
 
-    // 4. Calculate Current Month Inflow vs Outflow
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    // 4. Calculate Current Month Inflow vs Outflow for base reporting currency
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
+      0,
+      0,
+      0,
+      0,
+    );
 
     const [incomeAggregate, expenseAggregate] = await Promise.all([
       this.prisma.transaction.aggregate({
         where: {
           userId,
+          currency: userCurrency,
           type: TransactionType.INCOME,
           transactionDate: { gte: startOfMonth, lte: endOfMonth },
         },
@@ -96,6 +152,7 @@ export class DashboardService {
       this.prisma.transaction.aggregate({
         where: {
           userId,
+          currency: userCurrency,
           type: TransactionType.EXPENSE,
           transactionDate: { gte: startOfMonth, lte: endOfMonth },
         },
@@ -117,15 +174,18 @@ export class DashboardService {
       income: income.toFixed(2),
       expenses: expenses.toFixed(2),
       netSavings: netSavings.toFixed(2),
+      currency: userCurrency,
       periodStart: startOfMonth,
       periodEnd: endOfMonth,
     };
 
     return {
+      baseCurrency: userCurrency,
       safeToSpend,
       monthlySummary,
-      totalLiquidBalance: liquidFunds.toFixed(2),
-      totalProtectedSavings: protectedSavings.toFixed(2),
+      totalLiquidBalance: baseLiquidFunds.toFixed(2),
+      totalProtectedSavings: baseProtectedSavings.toFixed(2),
+      excludedCurrenciesSummary,
       accounts: accountSummaries,
     };
   }

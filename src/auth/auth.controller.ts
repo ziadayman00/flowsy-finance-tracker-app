@@ -20,13 +20,18 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { AuthResponseDto, UserProfileDto } from './dto/auth-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from './decorators/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Authentication')
+// Controller-level fallback: 10 requests/min for any auth route not overridden below.
+@Throttle({ default: { limit: 10, ttl: 60000 } })
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  // Tightest limit: 5/min on registration (brute-force / account-enumeration vector).
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Register a new user account' })
   @ApiResponse({
     status: 201,
@@ -41,6 +46,8 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  // Tightest limit: 5/min on login (primary brute-force target).
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Authenticate user with email and password' })
   @ApiResponse({
     status: 200,
@@ -54,6 +61,9 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
+  // Slightly more permissive than login: token refresh is expected to be called
+  // automatically by the mobile client when access tokens expire (every 15 min).
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @ApiOperation({
     summary: 'Rotate refresh token and issue new token pair',
   })

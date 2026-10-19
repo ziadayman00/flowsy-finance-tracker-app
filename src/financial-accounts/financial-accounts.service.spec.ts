@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancialAccountsService } from './financial-accounts.service';
 import { PrismaService } from '../database/prisma.service';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AccountType, Prisma } from '@prisma/client';
 
 describe('FinancialAccountsService', () => {

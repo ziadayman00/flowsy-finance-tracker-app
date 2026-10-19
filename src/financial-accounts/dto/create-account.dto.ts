@@ -12,6 +12,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import {
+  IsSupportedCurrency,
+  SUPPORTED_CURRENCIES,
+} from '../../common/validators/is-supported-currency.validator';
 
 export class CreateAccountDto {
   @ApiProperty({ example: 'محفظة الكاش', description: 'Account display name' })
@@ -32,9 +36,14 @@ export class CreateAccountDto {
   @IsEnum(AccountType)
   type!: AccountType;
 
-  @ApiPropertyOptional({ example: 'EGP', default: 'EGP' })
+  @ApiPropertyOptional({
+    example: 'EGP',
+    default: 'EGP',
+    enum: SUPPORTED_CURRENCIES,
+    description: `Currency code. Supported values: ${SUPPORTED_CURRENCIES.join(', ')}`,
+  })
   @IsOptional()
-  @IsString()
+  @IsSupportedCurrency()
   currency?: string = 'EGP';
 
   @ApiPropertyOptional({
@@ -56,3 +65,4 @@ export class CreateAccountDto {
   @IsBoolean()
   excludeFromSafeToSpend?: boolean = false;
 }
+

@@ -11,7 +11,7 @@ import {
   PaginatedTransactionsDto,
   TransactionResponseDto,
 } from './dto/transaction-response.dto';
-import { Prisma, TransactionType } from '@prisma/client';
+import { Prisma, TransactionType, CommitmentStatus } from '@prisma/client';
 import Decimal from 'decimal.js';
 
 @Injectable()
@@ -91,6 +91,11 @@ export class TransactionsService {
       if (!destAccount) {
         throw new NotFoundException('Destination financial account not found');
       }
+      if (account.currency !== destAccount.currency) {
+        throw new BadRequestException(
+          `Cross-currency transfers are not supported. Source account is ${account.currency}, destination account is ${destAccount.currency}.`,
+        );
+      }
     }
 
     const txDate = dto.transactionDate
@@ -161,6 +166,136 @@ export class TransactionsService {
     });
 
     return this.mapToDto(createdTx);
+  }
+
+  async createBatch(
+    userId: string,
+    dtos: CreateTransactionDto[],
+  ): Promise<{ created: TransactionResponseDto[]; count: number }> {
+    if (!dtos || dtos.length === 0) {
+      throw new BadRequestException('At least one transaction is required');
+    }
+
+    // Pre-validate all accounts and categories exist and belong to user
+    const accountIds = Array.from(new Set(dtos.map((d) => d.accountId)));
+    const categoryIds = Array.from(
+      new Set(dtos.map((d) => d.categoryId).filter((id): id is string => Boolean(id))),
+    );
+
+    const accounts = await this.prisma.financialAccount.findMany({
+      where: { id: { in: accountIds }, userId },
+    });
+    const accountMap = new Map(accounts.map((a) => [a.id, a]));
+
+    for (const accId of accountIds) {
+      if (!accountMap.has(accId)) {
+        throw new NotFoundException(`Financial account ${accId} not found`);
+      }
+    }
+
+    if (categoryIds.length > 0) {
+      const categories = await this.prisma.category.findMany({
+        where: {
+          id: { in: categoryIds },
+          OR: [{ userId: null }, { userId }],
+        },
+      });
+      const categoryMap = new Map(categories.map((c) => [c.id, c]));
+      for (const catId of categoryIds) {
+        if (!categoryMap.has(catId)) {
+          throw new NotFoundException(`Category ${catId} not found`);
+        }
+      }
+    }
+
+    // Atomic execution for all transactions in batch
+    const createdTransactions = await this.prisma.$transaction(async (prismaTx) => {
+      const results = [];
+
+      for (const dto of dtos) {
+        const account = accountMap.get(dto.accountId)!;
+        let destAccount: any = null;
+
+        if (dto.type === TransactionType.TRANSFER) {
+          if (!dto.destinationAccountId) {
+            throw new BadRequestException(
+              'destinationAccountId is required for transfer transactions',
+            );
+          }
+          if (dto.accountId === dto.destinationAccountId) {
+            throw new BadRequestException(
+              'Cannot transfer money to the same account',
+            );
+          }
+          destAccount = await prismaTx.financialAccount.findFirst({
+            where: { id: dto.destinationAccountId, userId },
+          });
+          if (!destAccount) {
+            throw new NotFoundException('Destination financial account not found');
+          }
+          if (account.currency !== destAccount.currency) {
+            throw new BadRequestException(
+              `Cross-currency transfers are not supported. Source is ${account.currency}, destination is ${destAccount.currency}.`,
+            );
+          }
+        }
+
+        const txDate = dto.transactionDate
+          ? new Date(dto.transactionDate)
+          : new Date();
+        const amountDecimal = new Prisma.Decimal(dto.amount.toFixed(2));
+
+        if (dto.type === TransactionType.INCOME) {
+          await prismaTx.financialAccount.update({
+            where: { id: account.id },
+            data: { currentBalance: { increment: amountDecimal } },
+          });
+        } else if (dto.type === TransactionType.EXPENSE) {
+          await prismaTx.financialAccount.update({
+            where: { id: account.id },
+            data: { currentBalance: { decrement: amountDecimal } },
+          });
+        } else if (dto.type === TransactionType.TRANSFER) {
+          await prismaTx.financialAccount.update({
+            where: { id: account.id },
+            data: { currentBalance: { decrement: amountDecimal } },
+          });
+          await prismaTx.financialAccount.update({
+            where: { id: destAccount.id },
+            data: { currentBalance: { increment: amountDecimal } },
+          });
+        }
+
+        const tx = await prismaTx.transaction.create({
+          data: {
+            userId,
+            accountId: dto.accountId,
+            categoryId: dto.categoryId || null,
+            destinationAccountId: dto.destinationAccountId || null,
+            type: dto.type,
+            amount: amountDecimal,
+            currency: account.currency,
+            note: dto.note || null,
+            transactionDate: txDate,
+          },
+          include: {
+            account: true,
+            category: true,
+            destinationAccount: true,
+          },
+        });
+
+        results.push(tx);
+      }
+
+      return results;
+    });
+
+    const mapped = createdTransactions.map((tx) => this.mapToDto(tx));
+    return {
+      created: mapped,
+      count: mapped.length,
+    };
   }
 
   async findAll(
@@ -356,11 +491,26 @@ export class TransactionsService {
         }
       }
 
-      // If linked to a paid commitment, unlink it
-      await prismaTx.commitment.updateMany({
+      // If linked to a paid commitment, restore commitment to unpaid state (OVERDUE or PENDING based on dueDate)
+      const linkedCommitments = await prismaTx.commitment.findMany({
         where: { paidTransactionId: transactionId },
-        data: { paidTransactionId: null },
       });
+
+      const now = new Date();
+      for (const commitment of linkedCommitments) {
+        const restoredStatus =
+          new Date(commitment.dueDate).getTime() < now.getTime()
+            ? CommitmentStatus.OVERDUE
+            : CommitmentStatus.PENDING;
+
+        await prismaTx.commitment.update({
+          where: { id: commitment.id },
+          data: {
+            status: restoredStatus,
+            paidTransactionId: null,
+          },
+        });
+      }
 
       await prismaTx.transaction.delete({
         where: { id: transactionId },

@@ -7,6 +7,7 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
 import { PrismaService } from '../src/database/prisma.service';
+import { parseCorsOrigins, createCorsOptions } from '../src/config/cors.config';
 
 describe('Flowsy Backend E2E - Critical User Journey', () => {
   let app: INestApplication;
@@ -25,6 +26,12 @@ describe('Flowsy Backend E2E - Critical User Journey', () => {
   let user1TransactionId: string;
 
   beforeAll(async () => {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'Safeguard Violation: E2E tests cannot be executed when NODE_ENV is production.',
+      );
+    }
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -39,6 +46,12 @@ describe('Flowsy Backend E2E - Critical User Journey', () => {
       }),
     );
     app.useGlobalFilters(new AllExceptionsFilter());
+
+    const allowedOrigins = parseCorsOrigins(
+      process.env.CORS_ORIGIN,
+      process.env.NODE_ENV,
+    );
+    app.enableCors(createCorsOptions(allowedOrigins));
 
     await app.init();
     prisma = app.get<PrismaService>(PrismaService);
@@ -285,6 +298,121 @@ describe('Flowsy Backend E2E - Critical User Journey', () => {
         .set('Authorization', `Bearer ${user2Token}`)
         .send({ accountId: user1AccountId })
         .expect(404);
+    });
+  });
+
+  describe('7. Audit Remediation Verification (FIN-01, FIN-03, CON-01)', () => {
+    let raceCommitmentId: string;
+    let paymentTxId: string;
+    let usdAccountId: string;
+
+    it('CON-01: Concurrent duplicate payments should allow only one to succeed', async () => {
+      // Create a commitment for concurrency test
+      const commRes = await request(app.getHttpServer())
+        .post('/api/v1/commitments')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          name: 'فاتورة الكهرباء للتجربة',
+          amount: 500,
+          currency: 'EGP',
+          dueDate: new Date(Date.now() + 86400000 * 7).toISOString(),
+          recurrence: 'NONE',
+        })
+        .expect(201);
+
+      raceCommitmentId = commRes.body.id;
+
+      // Fire 2 concurrent payment requests simultaneously
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/api/v1/commitments/${raceCommitmentId}/pay`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({ accountId: user1AccountId, note: 'Payment attempt 1' }),
+        request(app.getHttpServer())
+          .post(`/api/v1/commitments/${raceCommitmentId}/pay`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({ accountId: user1AccountId, note: 'Payment attempt 2' }),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses).toEqual([200, 400]);
+
+      // Capture the transaction ID of the successful payment
+      const successRes = res1.status === 200 ? res1 : res2;
+      paymentTxId = successRes.body.transactionId;
+      expect(paymentTxId).toBeDefined();
+
+      // Losing request should have error message indicating already paid
+      const failureRes = res1.status === 400 ? res1 : res2;
+      expect(failureRes.body.message).toContain('already been marked as paid');
+    });
+
+    it('FIN-01: Deleting a payment transaction should restore commitment to PENDING and refund balance', async () => {
+      // Balance before reversal
+      const accBefore = await request(app.getHttpServer())
+        .get(`/api/v1/accounts/${user1AccountId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      const balanceBefore = parseFloat(accBefore.body.currentBalance);
+
+      // Delete payment transaction (reversal)
+      await request(app.getHttpServer())
+        .delete(`/api/v1/transactions/${paymentTxId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+
+      // Verify balance was refunded (+500 EGP)
+      const accAfter = await request(app.getHttpServer())
+        .get(`/api/v1/accounts/${user1AccountId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      const balanceAfter = parseFloat(accAfter.body.currentBalance);
+      expect(balanceAfter).toBeCloseTo(balanceBefore + 500, 2);
+
+      // Verify commitment was restored to PENDING (due date is in the future)
+      const commAfter = await request(app.getHttpServer())
+        .get(`/api/v1/commitments/${raceCommitmentId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(commAfter.body.status).toBe('PENDING');
+      expect(commAfter.body.paidTransactionId).toBeNull();
+    });
+
+    it('FIN-03: Cross-currency transfer should be rejected without mutating account balances', async () => {
+      // Create a USD account for User 1
+      const usdRes = await request(app.getHttpServer())
+        .post('/api/v1/accounts')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          name: 'حساب دولاري E2E',
+          type: 'BANK',
+          currency: 'USD',
+          initialBalance: 100,
+        })
+        .expect(201);
+      usdAccountId = usdRes.body.id;
+
+      // Attempt cross-currency transfer from EGP account to USD account
+      const transferRes = await request(app.getHttpServer())
+        .post('/api/v1/transactions')
+        .set('Authorization', `Bearer ${user1Token}`)
+        .send({
+          type: 'TRANSFER',
+          amount: 50,
+          accountId: user1AccountId,
+          destinationAccountId: usdAccountId,
+          note: 'Invalid FX transfer',
+        })
+        .expect(400);
+
+      expect(transferRes.body.message).toContain('Cross-currency transfers are not supported');
+
+      // Verify USD balance remains 100.00
+      const usdAcc = await request(app.getHttpServer())
+        .get(`/api/v1/accounts/${usdAccountId}`)
+        .set('Authorization', `Bearer ${user1Token}`)
+        .expect(200);
+      expect(usdAcc.body.currentBalance).toBe('100.00');
     });
   });
 });

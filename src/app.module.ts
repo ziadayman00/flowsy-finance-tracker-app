@@ -11,7 +11,15 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { CommitmentsModule } from './commitments/commitments.module';
 import { BudgetsModule } from './budgets/budgets.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { SavingsGoalsModule } from './savings-goals/savings-goals.module';
+import { ForecastingModule } from './forecasting/forecasting.module';
+import { ImportModule } from './import/import.module';
+import { ExchangeRatesModule } from './providers/exchange-rates/exchange-rates.module';
+import { NotificationsModule } from './providers/notifications/notifications.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
+
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -19,6 +27,21 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
       isGlobal: true,
       validate,
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60000,
+        limit: 100,
+      },
+      {
+        // Named 'auth' throttler used by auth endpoints for brute-force protection.
+        // Auth controller applies: @Throttle({ auth: { limit: 5, ttl: 60000 } })
+        // on sensitive mutation endpoints (login, register, refresh).
+        name: 'auth',
+        ttl: 60000,
+        limit: 5,
+      },
+    ]),
     PrismaModule,
     HealthModule,
     AuthModule,
@@ -29,6 +52,17 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
     CommitmentsModule,
     BudgetsModule,
     DashboardModule,
+    SavingsGoalsModule,
+    ForecastingModule,
+    ImportModule,
+    ExchangeRatesModule,
+    NotificationsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {

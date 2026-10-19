@@ -1,0 +1,24 @@
+2289bfe8644270c56d98d9b9c7136b45
+"use strict";
+/**
+ * Bilingual Name Handling per Section 13.4
+ * Seeded names often combine languages: "كاش / Cash", "Groceries / بقالة ومستلزمات".
+ * Extracts the Arabic segment for UI rendering while preserving the original name on write.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.displayName = displayName;
+const ARABIC_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+function displayName(name) {
+    if (!name || typeof name !== 'string')
+        return '';
+    if (name.includes(' / ')) {
+        const parts = name.split(' / ').map((p) => p.trim());
+        const arabicPart = parts.find((p) => ARABIC_REGEX.test(p));
+        if (arabicPart) {
+            return arabicPart;
+        }
+        return parts[0] || name;
+    }
+    return name.trim();
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXHppYWQgYXltYW5cXENWIHByb2plY3RzXFwyMDI2XFxmbG93c3lcXG1vYmlsZVxcc3JjXFx1dGlsc1xcbmFtZXMudHMiLCJtYXBwaW5ncyI6IjtBQUFBOzs7O0dBSUc7O0FBSUgsa0NBYUM7QUFmRCxNQUFNLFlBQVksR0FBRyxxRUFBcUUsQ0FBQztBQUUzRixTQUFnQixXQUFXLENBQUMsSUFBWTtJQUN0QyxJQUFJLENBQUMsSUFBSSxJQUFJLE9BQU8sSUFBSSxLQUFLLFFBQVE7UUFBRSxPQUFPLEVBQUUsQ0FBQztJQUVqRCxJQUFJLElBQUksQ0FBQyxRQUFRLENBQUMsS0FBSyxDQUFDLEVBQUUsQ0FBQztRQUN6QixNQUFNLEtBQUssR0FBRyxJQUFJLENBQUMsS0FBSyxDQUFDLEtBQUssQ0FBQyxDQUFDLEdBQUcsQ0FBQyxDQUFDLENBQUMsRUFBRSxFQUFFLENBQUMsQ0FBQyxDQUFDLElBQUksRUFBRSxDQUFDLENBQUM7UUFDckQsTUFBTSxVQUFVLEdBQUcsS0FBSyxDQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsRUFBRSxFQUFFLENBQUMsWUFBWSxDQUFDLElBQUksQ0FBQyxDQUFDLENBQUMsQ0FBQyxDQUFDO1FBQzNELElBQUksVUFBVSxFQUFFLENBQUM7WUFDZixPQUFPLFVBQVUsQ0FBQztRQUNwQixDQUFDO1FBQ0QsT0FBTyxLQUFLLENBQUMsQ0FBQyxDQUFDLElBQUksSUFBSSxDQUFDO0lBQzFCLENBQUM7SUFFRCxPQUFPLElBQUksQ0FBQyxJQUFJLEVBQUUsQ0FBQztBQUNyQixDQUFDIiwibmFtZXMiOltdLCJzb3VyY2VzIjpbIkQ6XFx6aWFkIGF5bWFuXFxDViBwcm9qZWN0c1xcMjAyNlxcZmxvd3N5XFxtb2JpbGVcXHNyY1xcdXRpbHNcXG5hbWVzLnRzIl0sInNvdXJjZXNDb250ZW50IjpbIi8qKlxuICogQmlsaW5ndWFsIE5hbWUgSGFuZGxpbmcgcGVyIFNlY3Rpb24gMTMuNFxuICogU2VlZGVkIG5hbWVzIG9mdGVuIGNvbWJpbmUgbGFuZ3VhZ2VzOiBcItmD2KfYtCAvIENhc2hcIiwgXCJHcm9jZXJpZXMgLyDYqNmC2KfZhNipINmI2YXYs9iq2YTYstmF2KfYqlwiLlxuICogRXh0cmFjdHMgdGhlIEFyYWJpYyBzZWdtZW50IGZvciBVSSByZW5kZXJpbmcgd2hpbGUgcHJlc2VydmluZyB0aGUgb3JpZ2luYWwgbmFtZSBvbiB3cml0ZS5cbiAqL1xuXG5jb25zdCBBUkFCSUNfUkVHRVggPSAvW1xcdTA2MDAtXFx1MDZGRlxcdTA3NTAtXFx1MDc3RlxcdTA4QTAtXFx1MDhGRlxcdUZCNTAtXFx1RkRGRlxcdUZFNzAtXFx1RkVGRl0vO1xuXG5leHBvcnQgZnVuY3Rpb24gZGlzcGxheU5hbWUobmFtZTogc3RyaW5nKTogc3RyaW5nIHtcbiAgaWYgKCFuYW1lIHx8IHR5cGVvZiBuYW1lICE9PSAnc3RyaW5nJykgcmV0dXJuICcnO1xuXG4gIGlmIChuYW1lLmluY2x1ZGVzKCcgLyAnKSkge1xuICAgIGNvbnN0IHBhcnRzID0gbmFtZS5zcGxpdCgnIC8gJykubWFwKChwKSA9PiBwLnRyaW0oKSk7XG4gICAgY29uc3QgYXJhYmljUGFydCA9IHBhcnRzLmZpbmQoKHApID0+IEFSQUJJQ19SRUdFWC50ZXN0KHApKTtcbiAgICBpZiAoYXJhYmljUGFydCkge1xuICAgICAgcmV0dXJuIGFyYWJpY1BhcnQ7XG4gICAgfVxuICAgIHJldHVybiBwYXJ0c1swXSB8fCBuYW1lO1xuICB9XG5cbiAgcmV0dXJuIG5hbWUudHJpbSgpO1xufVxuIl0sInZlcnNpb24iOjN9

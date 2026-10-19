@@ -444,3 +444,79 @@ flowsy/
 3. Run tests with `pnpm run test` and `pnpm run test:e2e`.
 4. Launch the development server with `pnpm run start:dev` and visit Swagger docs at `http://localhost:3000/api/docs`.
 
+---
+
+## Phase 10: Pre-Mobile Integration Audit Remediation Sprint
+
+### A. Context & Objectives
+Following an independent read-only engineering audit of the codebase at commit `67e6e37`, an Audit Remediation Sprint was conducted to resolve verified issues across financial integrity, concurrency, date arithmetic, security hardening, and developer tooling.
+
+### B. Summary of Remediations
+
+| Issue Code | Area | Remediation Summary | Files Modified |
+| :--- | :--- | :--- | :--- |
+| **FIN-01** | Financial Integrity | Reversing a payment transaction unlinks the commitment and restores its status to `PENDING` or `OVERDUE` (based on `dueDate` vs `now`) in the same atomic `$transaction`. Account balance is refunded atomically. | `src/transactions/transactions.service.ts` |
+| **FIN-02** | Financial Integrity | Implemented base reporting currency policy (`user.currency \|\| 'EGP'`). Multi-currency accounts are no longer added directly to base Safe-to-Spend. Excluded non-base currencies are reported separately in `excludedCurrenciesSummary`. Currency codes clearly labeled. | `src/dashboard/dashboard.service.ts`, `src/dashboard/dto/dashboard-summary.dto.ts` |
+| **FIN-03** | Financial Integrity | Cross-currency transfers are strictly rejected with HTTP 400 `BadRequestException` prior to any ledger write. Transfer balances and histories remain untouched. | `src/transactions/transactions.service.ts` |
+| **CON-01** | Concurrency | Concurrent duplicate commitment payments prevented via atomic conditional update (`updateMany` with `status: { not: CommitmentStatus.PAID }`) as the primary step inside Prisma `$transaction`. Losing request receives HTTP 400 without mutating account balance. | `src/commitments/commitments.service.ts` |
+| **DAT-01** | Date Arithmetic | Month-end recurring dates (28th–31st) clamp to the target month's last valid day (e.g. Feb 28 in non-leap year or Feb 29 in leap year) and restore the original target day (31st) on subsequent occurrences when the target month permits. | `src/commitments/commitments.service.ts` |
+| **SEC-01** | Security | Enforced rate limiting via `@nestjs/throttler` (stricter 10 req/min limit on `/api/v1/auth/*`, 100 req/min global limit). | `src/app.module.ts`, `src/auth/auth.controller.ts` |
+| **SEC-02** | Security | Configured HTTP security headers via `helmet` (with Swagger UI compatible CSP). Implemented strict, validated CORS allowlist with explicit origin validation, failing fast in production on missing or wildcard configurations while preserving native mobile client access. | `src/config/cors.config.ts`, `src/config/env.validation.ts`, `src/main.ts` |
+| **OPS-01** | Tooling | Restored `pnpm run lint` with compatible ESLint and TypeScript ESLint configuration (`.eslintrc.js`). Resolved all warnings (0 errors, 0 warnings). | `.eslintrc.js`, `package.json`, codebase lint cleanup |
+| **TEST-01**| Safeguards | Added production environment check in E2E suite (`test/app.e2e-spec.ts`) preventing accidental execution against production databases. | `test/app.e2e-spec.ts` |
+
+### C. Verification Outcomes
+
+1. **Strict TypeScript Compilation:**
+   - Command: `pnpm run build`
+   - Result: Successful compilation to `dist/` with zero errors.
+2. **ESLint Static Analysis:**
+   - Command: `pnpm run lint`
+   - Result: 0 errors, 0 warnings across all source and test files.
+3. **Unit & Regression Testing:**
+   - Command: `pnpm run test`
+   - Result: 9 test suites passed, 55 tests passed, 0 failures.
+   - Specific regressions covered:
+     - Cross-currency transfer rejection leaving balances unchanged (`FIN-03`).
+     - Payment reversal restoring commitment to `PENDING` or `OVERDUE` (`FIN-01`).
+     - Multi-currency isolation and excluded currency summary (`FIN-02`).
+     - Losing concurrent payment rejection without balance mutation (`CON-01`).
+     - Date clamping: Jan 31 -> Feb 28 -> Mar 31; Aug 31 -> Sep 30 -> Oct 31; Leap-year Feb 29 (`DAT-01`).
+     - CORS origin parsing and URL structure validation (`isValidOrigin`).
+     - Production environment failure on missing or wildcard `CORS_ORIGIN`.
+4. **End-to-End Integration Suite:**
+   - Command: `pnpm run test:e2e`
+   - Result: 2 test suites passed, 27 tests passed, 0 failures against local PostgreSQL 17.
+   - `test/cors.e2e-spec.ts`: verified approved origin (200/204 with credentials), unapproved origin rejection (403 Forbidden without `Access-Control-Allow-Origin`), native mobile client passthrough without `Origin` header (200 OK), and multiple configured origins.
+   - `test/app.e2e-spec.ts`: 19 full critical user journey and financial integrity tests.
+
+---
+
+## Phase 11: Focused CORS Security Hardening
+
+### A. Context & Vulnerability Remediation
+The pre-mobile integration audit identified that setting `origin: true` in the CORS configuration reflected any incoming request `Origin` header while `credentials: true` was active, presenting a cross-origin security vulnerability.
+
+### B. Implementation Details
+1. **Removed Arbitrary Reflection:** Replaced dynamic origin reflection with an explicit allowlist validation strategy.
+2. **Strict Origin Parser & Validator (`src/config/cors.config.ts`):**
+   - Validates that every configured origin is an absolute URL with valid protocol (`http:` or `https:`) and host.
+   - Strictly prohibits wildcards (`*`), trailing slashes, or pathnames.
+   - Parses comma-separated multi-origin lists.
+3. **Fail-Fast Environment Validation (`src/config/env.validation.ts`):**
+   - In production (`NODE_ENV=production`), startup fails immediately if `CORS_ORIGIN` is missing, empty, wildcard, or contains invalid URLs.
+   - In local development (`NODE_ENV=development`), unconfigured `CORS_ORIGIN` defaults securely to explicit local frontend origins (`http://localhost:3000,http://localhost:5173,http://localhost:8081`). Wildcards are prohibited across all environments.
+4. **Native Mobile Client Compatibility:**
+   - Native HTTP clients (which omit the browser `Origin` header) pass through unimpeded without CORS errors.
+5. **Secure Middleware Factory (`createCorsOptions`):**
+   - Requests from approved origins receive `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`.
+   - Requests from unapproved browser origins receive HTTP 403 Forbidden via `ForbiddenException` and the origin is never reflected.
+
+### C. Verification Outcomes
+- `src/config/cors.config.spec.ts`: 13 unit tests passed.
+- `test/cors.e2e-spec.ts`: 8 live HTTP integration tests passed.
+- `pnpm run build`: cleanly succeeded.
+- `pnpm run lint`: 0 errors, 0 warnings.
+
+
+

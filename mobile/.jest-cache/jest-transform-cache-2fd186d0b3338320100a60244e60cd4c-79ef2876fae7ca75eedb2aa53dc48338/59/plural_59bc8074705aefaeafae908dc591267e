@@ -1,0 +1,52 @@
+d8c1c3e745efcd9904fff1655d012713
+"use strict";
+/**
+ * Arabic Pluralization Rules per Section 13.5
+ * 1 -> singular (معاملة واحدة / معاملة)
+ * 2 -> dual (معاملتين / التزامين)
+ * 3..10 -> plural (3 معاملات / 3 التزامات)
+ * >=11 -> singular (15 معاملة / 15 التزام)
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.formatPlural = formatPlural;
+exports.formatCommitmentsCount = formatCommitmentsCount;
+exports.formatTransactionsCount = formatTransactionsCount;
+exports.formatDaysCount = formatDaysCount;
+function formatPlural(count, forms) {
+    const abs = Math.abs(count);
+    if (abs === 0) {
+        return `0 ${forms.singular}`;
+    }
+    if (abs === 1) {
+        return forms.singular;
+    }
+    if (abs === 2) {
+        return forms.dual;
+    }
+    if (abs >= 3 && abs <= 10) {
+        return `${abs} ${forms.plural}`;
+    }
+    return `${abs} ${forms.singular}`;
+}
+function formatCommitmentsCount(count) {
+    return formatPlural(count, {
+        singular: 'التزام',
+        dual: 'التزامين',
+        plural: 'التزامات',
+    });
+}
+function formatTransactionsCount(count) {
+    return formatPlural(count, {
+        singular: 'معاملة',
+        dual: 'معاملتين',
+        plural: 'معاملات',
+    });
+}
+function formatDaysCount(count) {
+    return formatPlural(count, {
+        singular: 'يوم',
+        dual: 'يومين',
+        plural: 'أيام',
+    });
+}
+//# sourceMappingURL=data:application/json;charset=utf-8;base64,eyJmaWxlIjoiRDpcXHppYWQgYXltYW5cXENWIHByb2plY3RzXFwyMDI2XFxmbG93c3lcXG1vYmlsZVxcc3JjXFx1dGlsc1xccGx1cmFsLnRzIiwibWFwcGluZ3MiOiI7QUFBQTs7Ozs7O0dBTUc7O0FBUUgsb0NBZUM7QUFFRCx3REFNQztBQUVELDBEQU1DO0FBRUQsMENBTUM7QUF2Q0QsU0FBZ0IsWUFBWSxDQUFDLEtBQWEsRUFBRSxLQUFrQjtJQUM1RCxNQUFNLEdBQUcsR0FBRyxJQUFJLENBQUMsR0FBRyxDQUFDLEtBQUssQ0FBQyxDQUFDO0lBQzVCLElBQUksR0FBRyxLQUFLLENBQUMsRUFBRSxDQUFDO1FBQ2QsT0FBTyxLQUFLLEtBQUssQ0FBQyxRQUFRLEVBQUUsQ0FBQztJQUMvQixDQUFDO0lBQ0QsSUFBSSxHQUFHLEtBQUssQ0FBQyxFQUFFLENBQUM7UUFDZCxPQUFPLEtBQUssQ0FBQyxRQUFRLENBQUM7SUFDeEIsQ0FBQztJQUNELElBQUksR0FBRyxLQUFLLENBQUMsRUFBRSxDQUFDO1FBQ2QsT0FBTyxLQUFLLENBQUMsSUFBSSxDQUFDO0lBQ3BCLENBQUM7SUFDRCxJQUFJLEdBQUcsSUFBSSxDQUFDLElBQUksR0FBRyxJQUFJLEVBQUUsRUFBRSxDQUFDO1FBQzFCLE9BQU8sR0FBRyxHQUFHLElBQUksS0FBSyxDQUFDLE1BQU0sRUFBRSxDQUFDO0lBQ2xDLENBQUM7SUFDRCxPQUFPLEdBQUcsR0FBRyxJQUFJLEtBQUssQ0FBQyxRQUFRLEVBQUUsQ0FBQztBQUNwQyxDQUFDO0FBRUQsU0FBZ0Isc0JBQXNCLENBQUMsS0FBYTtJQUNsRCxPQUFPLFlBQVksQ0FBQyxLQUFLLEVBQUU7UUFDekIsUUFBUSxFQUFFLFFBQVE7UUFDbEIsSUFBSSxFQUFFLFVBQVU7UUFDaEIsTUFBTSxFQUFFLFVBQVU7S0FDbkIsQ0FBQyxDQUFDO0FBQ0wsQ0FBQztBQUVELFNBQWdCLHVCQUF1QixDQUFDLEtBQWE7SUFDbkQsT0FBTyxZQUFZLENBQUMsS0FBSyxFQUFFO1FBQ3pCLFFBQVEsRUFBRSxRQUFRO1FBQ2xCLElBQUksRUFBRSxVQUFVO1FBQ2hCLE1BQU0sRUFBRSxTQUFTO0tBQ2xCLENBQUMsQ0FBQztBQUNMLENBQUM7QUFFRCxTQUFnQixlQUFlLENBQUMsS0FBYTtJQUMzQyxPQUFPLFlBQVksQ0FBQyxLQUFLLEVBQUU7UUFDekIsUUFBUSxFQUFFLEtBQUs7UUFDZixJQUFJLEVBQUUsT0FBTztRQUNiLE1BQU0sRUFBRSxNQUFNO0tBQ2YsQ0FBQyxDQUFDO0FBQ0wsQ0FBQyIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJEOlxcemlhZCBheW1hblxcQ1YgcHJvamVjdHNcXDIwMjZcXGZsb3dzeVxcbW9iaWxlXFxzcmNcXHV0aWxzXFxwbHVyYWwudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBBcmFiaWMgUGx1cmFsaXphdGlvbiBSdWxlcyBwZXIgU2VjdGlvbiAxMy41XG4gKiAxIC0+IHNpbmd1bGFyICjZhdi52KfZhdmE2Kkg2YjYp9it2K/YqSAvINmF2LnYp9mF2YTYqSlcbiAqIDIgLT4gZHVhbCAo2YXYudin2YXZhNiq2YrZhiAvINin2YTYqtiy2KfZhdmK2YYpXG4gKiAzLi4xMCAtPiBwbHVyYWwgKDMg2YXYudin2YXZhNin2KogLyAzINin2YTYqtiy2KfZhdin2KopXG4gKiA+PTExIC0+IHNpbmd1bGFyICgxNSDZhdi52KfZhdmE2KkgLyAxNSDYp9mE2KrYstin2YUpXG4gKi9cblxuZXhwb3J0IGludGVyZmFjZSBQbHVyYWxGb3JtcyB7XG4gIHNpbmd1bGFyOiBzdHJpbmc7XG4gIGR1YWw6IHN0cmluZztcbiAgcGx1cmFsOiBzdHJpbmc7XG59XG5cbmV4cG9ydCBmdW5jdGlvbiBmb3JtYXRQbHVyYWwoY291bnQ6IG51bWJlciwgZm9ybXM6IFBsdXJhbEZvcm1zKTogc3RyaW5nIHtcbiAgY29uc3QgYWJzID0gTWF0aC5hYnMoY291bnQpO1xuICBpZiAoYWJzID09PSAwKSB7XG4gICAgcmV0dXJuIGAwICR7Zm9ybXMuc2luZ3VsYXJ9YDtcbiAgfVxuICBpZiAoYWJzID09PSAxKSB7XG4gICAgcmV0dXJuIGZvcm1zLnNpbmd1bGFyO1xuICB9XG4gIGlmIChhYnMgPT09IDIpIHtcbiAgICByZXR1cm4gZm9ybXMuZHVhbDtcbiAgfVxuICBpZiAoYWJzID49IDMgJiYgYWJzIDw9IDEwKSB7XG4gICAgcmV0dXJuIGAke2Fic30gJHtmb3Jtcy5wbHVyYWx9YDtcbiAgfVxuICByZXR1cm4gYCR7YWJzfSAke2Zvcm1zLnNpbmd1bGFyfWA7XG59XG5cbmV4cG9ydCBmdW5jdGlvbiBmb3JtYXRDb21taXRtZW50c0NvdW50KGNvdW50OiBudW1iZXIpOiBzdHJpbmcge1xuICByZXR1cm4gZm9ybWF0UGx1cmFsKGNvdW50LCB7XG4gICAgc2luZ3VsYXI6ICfYp9mE2KrYstin2YUnLFxuICAgIGR1YWw6ICfYp9mE2KrYstin2YXZitmGJyxcbiAgICBwbHVyYWw6ICfYp9mE2KrYstin2YXYp9iqJyxcbiAgfSk7XG59XG5cbmV4cG9ydCBmdW5jdGlvbiBmb3JtYXRUcmFuc2FjdGlvbnNDb3VudChjb3VudDogbnVtYmVyKTogc3RyaW5nIHtcbiAgcmV0dXJuIGZvcm1hdFBsdXJhbChjb3VudCwge1xuICAgIHNpbmd1bGFyOiAn2YXYudin2YXZhNipJyxcbiAgICBkdWFsOiAn2YXYudin2YXZhNiq2YrZhicsXG4gICAgcGx1cmFsOiAn2YXYudin2YXZhNin2KonLFxuICB9KTtcbn1cblxuZXhwb3J0IGZ1bmN0aW9uIGZvcm1hdERheXNDb3VudChjb3VudDogbnVtYmVyKTogc3RyaW5nIHtcbiAgcmV0dXJuIGZvcm1hdFBsdXJhbChjb3VudCwge1xuICAgIHNpbmd1bGFyOiAn2YrZiNmFJyxcbiAgICBkdWFsOiAn2YrZiNmF2YrZhicsXG4gICAgcGx1cmFsOiAn2KPZitin2YUnLFxuICB9KTtcbn1cbiJdLCJ2ZXJzaW9uIjozfQ==

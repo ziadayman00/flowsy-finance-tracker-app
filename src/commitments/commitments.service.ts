@@ -36,9 +36,21 @@ export class CommitmentsService {
     };
   }
 
-  private calculateNextDueDate(
+  /**
+   * Calculates the next due date for recurring commitments.
+   * Month-end clamping rule (DAT-01):
+   * When a monthly commitment is configured for the 28th, 29th, 30th, or 31st (or the last day of the month):
+   * 1. Preserves the intended day of the month (targetDay).
+   * 2. If target month has fewer days than targetDay (e.g. Feb in non-leap year has 28 days),
+   *    clamps to the final valid day of that target month (e.g. Feb 28).
+   * 3. Subsequent occurrences restore the original target day if the target month has enough days
+   *    (e.g., Jan 31 -> Feb 28 -> Mar 31; Aug 31 -> Sep 30 -> Oct 31).
+   * 4. For YEARLY recurrence, Feb 29 in leap years advances to Feb 28 in non-leap years.
+   */
+  public calculateNextDueDate(
     currentDueDate: Date,
     recurrence: RecurrenceFrequency,
+    targetDay?: number,
   ): Date {
     const next = new Date(currentDueDate);
     switch (recurrence) {
@@ -48,26 +60,72 @@ export class CommitmentsService {
       case RecurrenceFrequency.WEEKLY:
         next.setDate(next.getDate() + 7);
         break;
-      case RecurrenceFrequency.MONTHLY:
-        next.setMonth(next.getMonth() + 1);
+      case RecurrenceFrequency.MONTHLY: {
+        const currentYear = next.getFullYear();
+        const currentMonth = next.getMonth(); // 0-indexed: 0=Jan, 11=Dec
+        const currentDay = next.getDate();
+
+        // Check if current date is the last day of its month
+        const daysInCurrentMonth = new Date(
+          currentYear,
+          currentMonth + 1,
+          0,
+        ).getDate();
+        const isCurrentLastDay = currentDay === daysInCurrentMonth;
+
+        let intendedDay = targetDay ?? currentDay;
+        if (!targetDay && isCurrentLastDay && currentDay >= 28) {
+          intendedDay = 31;
+        }
+
+        const targetYear = currentMonth === 11 ? currentYear + 1 : currentYear;
+        const targetMonth = (currentMonth + 1) % 12;
+
+        const daysInTargetMonth = new Date(
+          targetYear,
+          targetMonth + 1,
+          0,
+        ).getDate();
+        const clampedDay = Math.min(intendedDay, daysInTargetMonth);
+
+        next.setFullYear(targetYear, targetMonth, clampedDay);
         break;
-      case RecurrenceFrequency.YEARLY:
-        next.setFullYear(next.getFullYear() + 1);
+      }
+      case RecurrenceFrequency.YEARLY: {
+        const currentYear = next.getFullYear();
+        const currentMonth = next.getMonth();
+        const currentDay = next.getDate();
+        const targetYear = currentYear + 1;
+        const daysInTargetMonth = new Date(
+          targetYear,
+          currentMonth + 1,
+          0,
+        ).getDate();
+        const clampedDay = Math.min(currentDay, daysInTargetMonth);
+        next.setFullYear(targetYear, currentMonth, clampedDay);
         break;
+      }
       default:
         break;
     }
     return next;
   }
 
-  async findAll(
-    userId: string,
-    status?: CommitmentStatus,
-  ): Promise<CommitmentResponseDto[]> {
+  /**
+   * Marks past-due PENDING commitments for a user as OVERDUE.
+   *
+   * This is intentionally a separate method from findAll() to avoid write-on-read
+   * side effects (GAP-04). It should be called:
+   *   - By a scheduled job (e.g. nightly) to keep statuses current.
+   *   - Explicitly before a commitment list read where up-to-date status is critical.
+   *
+   * Calling it inside findAll() created a race condition: two concurrent GET /commitments
+   * requests would both attempt to updateMany() the same rows, and any scheduled job
+   * would compete with API reads. Separating it makes the intent explicit.
+   */
+  async markOverdueForUser(userId: string): Promise<number> {
     const now = new Date();
-
-    // Dynamically mark past-due PENDING commitments as OVERDUE
-    await this.prisma.commitment.updateMany({
+    const result = await this.prisma.commitment.updateMany({
       where: {
         userId,
         status: CommitmentStatus.PENDING,
@@ -77,7 +135,16 @@ export class CommitmentsService {
         status: CommitmentStatus.OVERDUE,
       },
     });
+    return result.count;
+  }
 
+  async findAll(
+    userId: string,
+    status?: CommitmentStatus,
+  ): Promise<CommitmentResponseDto[]> {
+    // Note: OVERDUE status transitions happen via markOverdueForUser(), called by
+    // a scheduled job. findAll() is a pure read — it does not modify commitment status.
+    // Clients that require up-to-date status should call the reconcile endpoint first.
     const commitments = await this.prisma.commitment.findMany({
       where: {
         userId,
@@ -208,12 +275,38 @@ export class CommitmentsService {
       throw new NotFoundException('Financial account not found');
     }
 
+    if (account.currency !== commitment.currency) {
+      throw new BadRequestException(
+        `Cross-currency payments are not supported. Account currency is ${account.currency}, commitment currency is ${commitment.currency}.`,
+      );
+    }
+
     const paymentDate = dto.paidAt ? new Date(dto.paidAt) : new Date();
     const amountDecimal = commitment.amount;
 
-    // Execute atomic payment: create EXPENSE transaction, deduct account balance, mark PAID, schedule recurrence
+    // Execute atomic payment: claim commitment lock, create EXPENSE transaction, deduct account balance, mark PAID, schedule recurrence
     const result = await this.prisma.$transaction(async (prismaTx) => {
-      // 1. Create corresponding expense transaction
+      // 1. Atomically claim/lock the commitment using conditional update (CON-01)
+      // Only one concurrent request can transition a non-PAID commitment to PAID.
+      const lockResult = await prismaTx.commitment.updateMany({
+        where: {
+          id: commitmentId,
+          userId,
+          status: { not: CommitmentStatus.PAID },
+        },
+        data: {
+          status: CommitmentStatus.PAID,
+          accountId: dto.accountId,
+        },
+      });
+
+      if (lockResult.count === 0) {
+        throw new BadRequestException(
+          'This commitment has already been marked as paid',
+        );
+      }
+
+      // 2. Create corresponding expense transaction
       const tx = await prismaTx.transaction.create({
         data: {
           userId,
@@ -227,7 +320,7 @@ export class CommitmentsService {
         },
       });
 
-      // 2. Decrement account balance
+      // 3. Decrement account balance
       await prismaTx.financialAccount.update({
         where: { id: dto.accountId },
         data: {
@@ -235,13 +328,11 @@ export class CommitmentsService {
         },
       });
 
-      // 3. Mark current commitment as PAID with reference to transaction
+      // 4. Link paidTransactionId on the commitment
       const updatedCommitment = await prismaTx.commitment.update({
         where: { id: commitmentId },
         data: {
-          status: CommitmentStatus.PAID,
           paidTransactionId: tx.id,
-          accountId: dto.accountId,
         },
       });
 

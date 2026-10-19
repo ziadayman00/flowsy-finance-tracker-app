@@ -56,6 +56,31 @@ export class CommitmentsController {
   ): Promise<CommitmentResponseDto[]> {
     return this.commitmentsService.findAll(user.id, status);
   }
+  @Post('reconcile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mark overdue commitments',
+    description:
+      'Transitions all PENDING commitments whose dueDate is in the past to OVERDUE status. ' +
+      'Call this before reading commitments when accuracy is required. ' +
+      'A scheduled job also runs this automatically on a nightly basis.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the count of commitments transitioned to OVERDUE.',
+    schema: {
+      type: 'object',
+      properties: {
+        transitioned: { type: 'number', example: 2 },
+      },
+    },
+  })
+  async reconcileOverdue(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ transitioned: number }> {
+    const count = await this.commitmentsService.markOverdueForUser(user.id);
+    return { transitioned: count };
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get details of a specific commitment' })
@@ -133,3 +158,4 @@ export class CommitmentsController {
     return this.commitmentsService.pay(user.id, id, dto);
   }
 }
+

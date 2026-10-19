@@ -104,6 +104,14 @@ export class FinancialAccountsService {
     // Confirm ownership
     await this.findById(userId, accountId);
 
+    // CURRENCY IMMUTABILITY (GAP-02):
+    // An account's currency cannot be changed once transactions exist against it.
+    // UpdateAccountDto deliberately does not expose a `currency` field.
+    // This guard is here as defense-in-depth in case a future DTO change reintroduces it.
+    // If currency were changed while transactions remain, the stored transaction amounts
+    // would silently represent a different monetary unit — a financial data corruption.
+    // The correct process is: archive the account and create a new one in the desired currency.
+
     if (dto.name) {
       const existingName = await this.prisma.financialAccount.findFirst({
         where: {

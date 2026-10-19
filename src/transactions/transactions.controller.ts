@@ -23,6 +23,10 @@ import {
   PaginatedTransactionsDto,
   TransactionResponseDto,
 } from './dto/transaction-response.dto';
+import {
+  BatchCreateTransactionsDto,
+  BatchCreateTransactionsResponseDto,
+} from './dto/batch-create-transactions.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 
@@ -50,6 +54,25 @@ export class TransactionsController {
     @Body() dto: CreateTransactionDto,
   ): Promise<TransactionResponseDto> {
     return this.transactionsService.create(user.id, dto);
+  }
+
+  @Post('batch')
+  @ApiOperation({
+    summary:
+      'Record multiple financial transactions atomically in a single database transaction',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'All transactions recorded and account balances updated atomically.',
+    type: BatchCreateTransactionsResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Validation or transfer error' })
+  @ApiResponse({ status: 404, description: 'Account or category not found' })
+  async createBatch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BatchCreateTransactionsDto,
+  ): Promise<BatchCreateTransactionsResponseDto> {
+    return this.transactionsService.createBatch(user.id, dto.transactions);
   }
 
   @Get()

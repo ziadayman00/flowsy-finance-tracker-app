@@ -1,6 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsSupportedCurrency } from '../../common/validators/is-supported-currency.validator';
+import { IsSupportedTimezone } from '../../common/validators/is-supported-timezone.validator';
+import { SUPPORTED_CURRENCIES } from '../../common/validators/is-supported-currency.validator';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'زياد أيمن' })
@@ -13,13 +16,20 @@ export class UpdateUserDto {
   @MaxLength(50)
   displayName?: string;
 
-  @ApiPropertyOptional({ example: 'EGP' })
+  @ApiPropertyOptional({
+    example: 'EGP',
+    description: `Currency code. Supported values: ${SUPPORTED_CURRENCIES.join(', ')}`,
+    enum: SUPPORTED_CURRENCIES,
+  })
   @IsOptional()
-  @IsString()
+  @IsSupportedCurrency()
   currency?: string;
 
-  @ApiPropertyOptional({ example: 'Africa/Cairo' })
+  @ApiPropertyOptional({
+    example: 'Africa/Cairo',
+    description: 'Valid IANA timezone identifier',
+  })
   @IsOptional()
-  @IsString()
+  @IsSupportedTimezone()
   timezone?: string;
 }

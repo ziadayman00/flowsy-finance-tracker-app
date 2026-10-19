@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../database/prisma.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TransactionType, Prisma } from '@prisma/client';
+import { TransactionType, Prisma, CommitmentStatus } from '@prisma/client';
 
 describe('TransactionsService', () => {
   let service: TransactionsService;
@@ -27,6 +27,8 @@ describe('TransactionsService', () => {
       },
       commitment: {
         updateMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
       },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(prismaService);
@@ -140,6 +142,26 @@ describe('TransactionsService', () => {
       );
       expect(result.amount).toBe('250.50');
     });
+    it('should reject cross-currency transfers and leave balances unchanged (FIN-03)', async () => {
+      const egpAccount = { id: 'acc-egp', userId: 'user-1', currency: 'EGP' };
+      const usdAccount = { id: 'acc-usd', userId: 'user-1', currency: 'USD' };
+
+      prismaService.financialAccount.findFirst
+        .mockResolvedValueOnce(egpAccount)
+        .mockResolvedValueOnce(usdAccount);
+
+      await expect(
+        service.create('user-1', {
+          type: TransactionType.TRANSFER,
+          amount: 100,
+          accountId: 'acc-egp',
+          destinationAccountId: 'acc-usd',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prismaService.financialAccount.update).not.toHaveBeenCalled();
+      expect(prismaService.transaction.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('delete', () => {
@@ -165,6 +187,116 @@ describe('TransactionsService', () => {
         where: { id: 'tx-1' },
       });
       expect(result.success).toBe(true);
+    });
+
+    it('should restore linked commitment to PENDING if due date is in the future (FIN-01)', async () => {
+      const futureDate = new Date(Date.now() + 86400000 * 5); // +5 days
+      prismaService.transaction.findFirst.mockResolvedValue({
+        id: 'tx-pay-1',
+        userId: 'user-1',
+        type: TransactionType.EXPENSE,
+        amount: new Prisma.Decimal('500.00'),
+        accountId: 'acc-1',
+        destinationAccountId: null,
+      });
+
+      prismaService.commitment.findMany.mockResolvedValue([
+        {
+          id: 'comm-1',
+          name: 'Internet',
+          dueDate: futureDate,
+          paidTransactionId: 'tx-pay-1',
+        },
+      ]);
+
+      await service.delete('user-1', 'tx-pay-1');
+
+      expect(prismaService.commitment.update).toHaveBeenCalledWith({
+        where: { id: 'comm-1' },
+        data: {
+          status: CommitmentStatus.PENDING,
+          paidTransactionId: null,
+        },
+      });
+    });
+
+    it('should restore linked commitment to OVERDUE if due date is in the past (FIN-01)', async () => {
+      const pastDate = new Date(Date.now() - 86400000 * 5); // -5 days
+      prismaService.transaction.findFirst.mockResolvedValue({
+        id: 'tx-pay-2',
+        userId: 'user-1',
+        type: TransactionType.EXPENSE,
+        amount: new Prisma.Decimal('1200.00'),
+        accountId: 'acc-1',
+        destinationAccountId: null,
+      });
+
+      prismaService.commitment.findMany.mockResolvedValue([
+        {
+          id: 'comm-2',
+          name: 'Rent',
+          dueDate: pastDate,
+          paidTransactionId: 'tx-pay-2',
+        },
+      ]);
+
+      await service.delete('user-1', 'tx-pay-2');
+
+      expect(prismaService.commitment.update).toHaveBeenCalledWith({
+        where: { id: 'comm-2' },
+        data: {
+          status: CommitmentStatus.OVERDUE,
+          paidTransactionId: null,
+        },
+      });
+    });
+  });
+
+  describe('createBatch', () => {
+    it('should throw BadRequestException if dtos array is empty', async () => {
+      await expect(service.createBatch('user-1', [])).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw NotFoundException if any account is not found or does not belong to user', async () => {
+      prismaService.financialAccount.findMany = jest.fn().mockResolvedValue([
+        { id: 'acc-1', userId: 'user-1', currency: 'EGP' },
+      ]);
+
+      await expect(
+        service.createBatch('user-1', [
+          { type: TransactionType.EXPENSE, amount: 100, accountId: 'acc-1' },
+          { type: TransactionType.EXPENSE, amount: 200, accountId: 'acc-unknown' },
+        ]),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should atomically create multiple expenses and decrement account balances', async () => {
+      prismaService.financialAccount.findMany = jest.fn().mockResolvedValue([
+        { id: 'acc-1', userId: 'user-1', currency: 'EGP' },
+      ]);
+      prismaService.category.findMany = jest.fn().mockResolvedValue([
+        { id: 'cat-1', name: 'Food' },
+      ]);
+      prismaService.transaction.create = jest
+        .fn()
+        .mockImplementation(async ({ data }) => ({
+          id: 'tx-' + Math.random(),
+          ...data,
+          createdAt: new Date(),
+          account: { id: 'acc-1', name: 'Cash' },
+          category: { id: 'cat-1', name: 'Food', icon: 'fast-food' },
+          destinationAccount: null,
+        }));
+
+      const result = await service.createBatch('user-1', [
+        { type: TransactionType.EXPENSE, amount: 50, accountId: 'acc-1', categoryId: 'cat-1' },
+        { type: TransactionType.EXPENSE, amount: 75, accountId: 'acc-1' },
+      ]);
+
+      expect(result.count).toBe(2);
+      expect(result.created).toHaveLength(2);
+      expect(prismaService.financialAccount.update).toHaveBeenCalledTimes(2);
+      expect(prismaService.transaction.create).toHaveBeenCalledTimes(2);
     });
   });
 });
