@@ -17,6 +17,7 @@ import {
 
 import { AppText } from './src/components/primitives';
 import { BottomTabBar, TabRoute } from './src/components/navigation/BottomTabBar';
+import { strings } from './src/utils/strings.ar';
 
 // Auth Screens (S01 - S04)
 import { WelcomeScreen } from './src/screens/auth/WelcomeScreen';
