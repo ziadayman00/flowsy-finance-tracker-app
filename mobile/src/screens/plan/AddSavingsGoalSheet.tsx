@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -6,8 +6,6 @@ import {
   TextInput,
   Pressable,
 } from 'react-native';
-
-
 import { useTheme } from '../../theme';
 import {
   Sheet,
@@ -18,24 +16,30 @@ import {
 } from '../../components/primitives';
 import { savingsGoalsApi } from '../../api/savingsGoals';
 import { accountsApi } from '../../api/accounts';
-import { AccountResponseDto } from '../../api/types';
+import { AccountResponseDto, SavingsGoalResponseDto } from '../../api/types';
 import { getErrorMessage } from '../../utils/errors';
+import { toArabicNumberSeparators } from '../../utils/format';
+import { displayName } from '../../utils/names';
 import { haptics } from '../../utils/haptics';
 import { useToast } from '../../context/ToastContext';
 
 interface AddSavingsGoalSheetProps {
   visible: boolean;
   onClose: () => void;
+  goalToEdit?: SavingsGoalResponseDto | null;
   onSuccess?: () => void;
 }
 
 export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
   visible,
   onClose,
+  goalToEdit,
   onSuccess,
 }) => {
   const { colors, spacing, radii } = useTheme();
   const { showToast } = useToast();
+
+  const isEditMode = !!goalToEdit;
 
   const [name, setName] = useState('');
   const [amountStr, setAmountStr] = useState('0');
@@ -49,62 +53,103 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-
   const loadAccounts = useCallback(async () => {
     try {
       setLoadingAccounts(true);
       const all = await accountsApi.getAccounts();
-      setAccounts(all.filter((a) => !a.isArchived));
+      const active = all.filter((a) => !a.isArchived);
+      setAccounts(active);
+      if (!isEditMode && active.length > 0 && !selectedAccountId) {
+        setSelectedAccountId(active[0].id);
+        setCurrency(active[0].currency);
+      }
     } catch {
       // ignore
     } finally {
       setLoadingAccounts(false);
     }
-  }, []);
+  }, [isEditMode, selectedAccountId]);
 
   useEffect(() => {
     if (visible) {
-      loadAccounts();
-      // Reset form
-      setName('');
-      setAmountStr('0');
-      setCurrency('EGP');
-      setSelectedAccountId(null);
-      setTargetDate('');
-      setNote('');
       setError(null);
+      if (goalToEdit) {
+        setName(goalToEdit.name);
+        setAmountStr(goalToEdit.targetAmount);
+        setCurrency(goalToEdit.currency);
+        setSelectedAccountId(goalToEdit.account.id);
+        setTargetDate(
+          goalToEdit.targetDate ? goalToEdit.targetDate.split('T')[0] : ''
+        );
+        setNote(goalToEdit.note || '');
+      } else {
+        setName('');
+        setAmountStr('0');
+        setCurrency('EGP');
+        setSelectedAccountId(null);
+        setTargetDate('');
+        setNote('');
+      }
+      loadAccounts();
     }
-  }, [visible, loadAccounts]);
+  }, [visible, goalToEdit, loadAccounts]);
 
   // Keep currency in sync with the selected account's currency
   useEffect(() => {
-    if (selectedAccountId) {
+    if (selectedAccountId && !isEditMode) {
       const acc = accounts.find((a) => a.id === selectedAccountId);
       if (acc) setCurrency(acc.currency);
     }
-  }, [selectedAccountId, accounts]);
+  }, [selectedAccountId, accounts, isEditMode]);
 
+  const isValid = useMemo(() => {
+    const num = parseFloat(amountStr);
+    return name.trim().length > 0 && !isNaN(num) && num > 0 && !!selectedAccountId;
+  }, [name, amountStr, selectedAccountId]);
 
-  const isValid =
-    name.trim().length > 0 &&
-    !!selectedAccountId &&
-    parseFloat(amountStr) > 0;
+  const handleDatePreset = (preset: '3m' | '6m' | '1y' | 'eoy') => {
+    const d = new Date();
+    if (preset === '3m') {
+      d.setMonth(d.getMonth() + 3);
+    } else if (preset === '6m') {
+      d.setMonth(d.getMonth() + 6);
+    } else if (preset === '1y') {
+      d.setFullYear(d.getFullYear() + 1);
+    } else if (preset === 'eoy') {
+      d.setMonth(11, 31);
+    }
+    setTargetDate(d.toISOString().split('T')[0]);
+    haptics.impactLight();
+  };
 
   const handleSubmit = async () => {
-    if (!isValid || !selectedAccountId) return;
+    if (!isValid || !selectedAccountId || submitting) return;
     try {
       setSubmitting(true);
       setError(null);
-      await savingsGoalsApi.createGoal({
-        name: name.trim(),
-        targetAmount: amountStr,
-        currency,
-        accountId: selectedAccountId,
-        targetDate: targetDate.trim() || undefined,
-        note: note.trim() || undefined,
-      });
-      haptics.notificationSuccess();
-      showToast('تم إنشاء هدف الادخار');
+
+      if (isEditMode && goalToEdit) {
+        await savingsGoalsApi.updateGoal(goalToEdit.id, {
+          name: name.trim(),
+          targetAmount: amountStr,
+          targetDate: targetDate.trim() || null,
+          note: note.trim() || null,
+        });
+        haptics.notificationSuccess();
+        showToast('تم تحديث هدف الادخار');
+      } else {
+        await savingsGoalsApi.createGoal({
+          name: name.trim(),
+          targetAmount: amountStr,
+          currency,
+          accountId: selectedAccountId,
+          targetDate: targetDate.trim() || undefined,
+          note: note.trim() || undefined,
+        });
+        haptics.notificationSuccess();
+        showToast('تم إنشاء هدف الادخار');
+      }
+
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -115,25 +160,34 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
     }
   };
 
-  const isDirty = name.trim().length > 0 || parseFloat(amountStr) > 0 || !!selectedAccountId;
+  const isDirty =
+    name.trim().length > 0 || parseFloat(amountStr) > 0 || !!targetDate || !!note;
+
+  const targetDateFormatted = targetDate
+    ? new Date(targetDate).toLocaleDateString('ar-EG', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : '';
 
   return (
     <Sheet
       visible={visible}
       onClose={onClose}
-      title="هدف ادخار جديد"
+      title={isEditMode ? 'تعديل هدف الادخار' : 'هدف ادخار جديد'}
       isDirty={isDirty}
       footer={
         <Button
-          title="إنشاء الهدف"
+          title={isEditMode ? 'حفظ التعديلات' : 'إنشاء الهدف'}
           onPress={handleSubmit}
           loading={submitting}
-          disabled={!isValid}
+          disabled={!isValid || submitting}
         />
       }
     >
       <ScrollView
-        contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.lg }}
+        contentContainerStyle={{ gap: spacing.md, paddingBottom: spacing.xl }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -145,13 +199,15 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
           </View>
         )}
 
-        {/* Goal Name */}
+        {/* Goal Name Input */}
         <View style={{ gap: 6 }}>
-          <AppText variant="caption" tone="secondary">اسم الهدف</AppText>
+          <AppText variant="label" tone="secondary">
+            اسم الهدف
+          </AppText>
           <TextInput
             value={name}
-            onChangeText={setName}
-            placeholder="مثال: سيارة، سفر، طوارئ"
+            onChangeText={(txt) => setName(txt.slice(0, 60))}
+            placeholder="مثال: سيارة، دفعة أولى، صندوق طوارئ"
             placeholderTextColor={colors.textTertiary}
             style={[
               styles.textInput,
@@ -166,25 +222,74 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
           />
         </View>
 
-        {/* Target Amount */}
-        <View style={{ gap: 6 }}>
-          <AppText variant="caption" tone="secondary">المبلغ المستهدف</AppText>
+        {/* Target Amount Card (PROMINENT DISPLAY OF TARGET PRICE) */}
+        <View
+          style={[
+            styles.amountCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderRadius: radii.md,
+              padding: spacing.md,
+            },
+          ]}
+        >
+          <AppText variant="caption" tone="secondary">
+            المبلغ المستهدف (سعر الهدف)
+          </AppText>
+          <View style={styles.amountRow}>
+            <AppText variant="amountLg" tone="primary" style={{ writingDirection: 'ltr' }}>
+              {toArabicNumberSeparators(amountStr || '0')}
+            </AppText>
+            <AppText variant="title3" tone="secondary" style={{ marginStart: 8 }}>
+              {currency}
+            </AppText>
+          </View>
+        </View>
+
+        {/* Keypad for entering target amount */}
+        <View style={{ marginTop: -4 }}>
           <Keypad
             value={amountStr}
             onChange={setAmountStr}
+            maxDecimals={2}
+            maxIntegerDigits={10}
           />
         </View>
 
         {/* Account Selection */}
-        <View style={{ gap: 6 }}>
-          <AppText variant="caption" tone="secondary">الحساب المرتبط بالهدف</AppText>
-          <AppText variant="caption" tone="secondary" style={{ fontSize: 11, opacity: 0.8 }}>
-            سيعكس التقدم رصيد هذا الحساب
+        <View style={{ gap: 6, marginTop: spacing.xs }}>
+          <AppText variant="label" tone="secondary">
+            الحساب المرتبط
           </AppText>
-          {loadingAccounts ? (
-            <AppText variant="caption" tone="secondary">جارٍ التحميل...</AppText>
+          <AppText variant="caption" tone="secondary" style={{ fontSize: 11, marginTop: -4 }}>
+            رصيد هذا الحساب يحدد نسبة إنجاز الهدف تلقائياً
+          </AppText>
+
+          {isEditMode && goalToEdit ? (
+            <View
+              style={[
+                styles.accountChip,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  borderRadius: radii.sm,
+                  padding: 12,
+                },
+              ]}
+            >
+              <Icon name="wallet-outline" size={16} color={colors.textSecondary} />
+              <AppText variant="bodyStrong">{goalToEdit.account.name}</AppText>
+              <AppText variant="caption" tone="secondary">({goalToEdit.currency})</AppText>
+            </View>
+          ) : loadingAccounts ? (
+            <AppText variant="caption" tone="secondary">جارٍ تحميل الحسابات...</AppText>
           ) : (
-            <View style={{ gap: 8 }}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipsRow}
+            >
               {accounts.map((acc) => {
                 const selected = acc.id === selectedAccountId;
                 return (
@@ -192,53 +297,109 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
                     key={acc.id}
                     onPress={() => {
                       setSelectedAccountId(acc.id);
+                      setCurrency(acc.currency);
                       haptics.impactLight();
                     }}
                     style={[
-                      styles.accountRow,
+                      styles.accountChip,
                       {
                         backgroundColor: selected ? colors.forest : colors.surface,
                         borderColor: selected ? colors.forest : colors.border,
-                        borderRadius: radii.md,
+                        borderRadius: radii.sm,
                       },
                     ]}
                   >
                     <Icon
-                      name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={18}
+                      name={selected ? 'checkmark-circle' : 'wallet-outline'}
+                      size={15}
                       color={selected ? colors.onAction : colors.textTertiary}
                     />
-                    <View style={{ flex: 1 }}>
-                      <AppText
-                        variant="body"
-                        style={{ color: selected ? colors.onAction : colors.textPrimary }}
-                        numberOfLines={1}
-                      >
-                        {acc.name}
-                      </AppText>
-                    </View>
+                    <AppText
+                      variant="label"
+                      style={{
+                        color: selected ? colors.onAction : colors.textPrimary,
+                        fontWeight: selected ? '700' : '500',
+                      }}
+                    >
+                      {displayName(acc.name)}
+                    </AppText>
                     <AppText
                       variant="caption"
-                      style={{ color: selected ? colors.onAction : colors.textSecondary }}
+                      style={{
+                        color: selected ? colors.onAction : colors.textSecondary,
+                        fontSize: 10,
+                      }}
                     >
                       {acc.currency}
                     </AppText>
                   </Pressable>
                 );
               })}
-            </View>
+            </ScrollView>
           )}
         </View>
 
-        {/* Target Date (optional) */}
-        <View style={{ gap: 6 }}>
-          <AppText variant="caption" tone="secondary">
-            الموعد المستهدف (اختياري) — بصيغة YYYY-MM-DD
-          </AppText>
+        {/* Target Date with Quick Presets */}
+        <View style={{ gap: 6, marginTop: spacing.xs }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <AppText variant="label" tone="secondary">
+              تاريخ الهدف (اختياري)
+            </AppText>
+            {targetDateFormatted ? (
+              <AppText variant="caption" tone="secondary" style={{ color: colors.forest }}>
+                {targetDateFormatted}
+              </AppText>
+            ) : null}
+          </View>
+
+          {/* Quick Date Presets */}
+          <View style={styles.chipsRow}>
+            {[
+              { id: '3m' as const, label: '٣ أشهر' },
+              { id: '6m' as const, label: '٦ أشهر' },
+              { id: '1y' as const, label: 'سنة' },
+              { id: 'eoy' as const, label: 'نهاية العام' },
+            ].map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => handleDatePreset(p.id)}
+                style={[
+                  styles.presetChip,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                    borderRadius: radii.sm,
+                  },
+                ]}
+              >
+                <AppText variant="caption" tone="secondary">
+                  {p.label}
+                </AppText>
+              </Pressable>
+            ))}
+            {targetDate ? (
+              <Pressable
+                onPress={() => { setTargetDate(''); haptics.impactLight(); }}
+                style={[
+                  styles.presetChip,
+                  {
+                    backgroundColor: colors.sunken,
+                    borderColor: colors.border,
+                    borderRadius: radii.sm,
+                  },
+                ]}
+              >
+                <AppText variant="caption" tone="negative">
+                  مسح
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+
           <TextInput
             value={targetDate}
             onChangeText={setTargetDate}
-            placeholder="2026-12-31"
+            placeholder="YYYY-MM-DD"
             placeholderTextColor={colors.textTertiary}
             keyboardType="numbers-and-punctuation"
             style={[
@@ -256,12 +417,14 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
         </View>
 
         {/* Note (optional) */}
-        <View style={{ gap: 6 }}>
-          <AppText variant="caption" tone="secondary">ملاحظة (اختياري)</AppText>
+        <View style={{ gap: 6, marginTop: spacing.xs }}>
+          <AppText variant="label" tone="secondary">
+            ملاحظة (اختياري)
+          </AppText>
           <TextInput
             value={note}
-            onChangeText={setNote}
-            placeholder="..."
+            onChangeText={(txt) => setNote(txt.slice(0, 200))}
+            placeholder="أضف تفاصيل إضافية حول خطتك لتحقيق هذا الهدف..."
             placeholderTextColor={colors.textTertiary}
             style={[
               styles.textInput,
@@ -270,7 +433,7 @@ export const AddSavingsGoalSheet: React.FC<AddSavingsGoalSheetProps> = ({
                 borderColor: colors.border,
                 color: colors.textPrimary,
                 borderRadius: radii.md,
-                height: 72,
+                height: 64,
                 textAlignVertical: 'top',
               },
             ]}
@@ -291,24 +454,36 @@ const styles = StyleSheet.create({
   textInput: {
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 10,
     fontSize: 15,
     textAlign: 'right',
   },
-  amountRow: {
+  amountCard: {
     borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
   },
-  accountRow: {
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 4,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  accountChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  presetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
   },
 });

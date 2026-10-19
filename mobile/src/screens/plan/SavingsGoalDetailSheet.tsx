@@ -19,6 +19,7 @@ interface SavingsGoalDetailSheetProps {
   visible: boolean;
   goal: SavingsGoalResponseDto | null;
   onClose: () => void;
+  onEdit?: (goal: SavingsGoalResponseDto) => void;
   onUpdated?: () => void;
 }
 
@@ -26,6 +27,7 @@ export const SavingsGoalDetailSheet: React.FC<SavingsGoalDetailSheetProps> = ({
   visible,
   goal,
   onClose,
+  onEdit,
   onUpdated,
 }) => {
   const { colors, spacing, radii } = useTheme();
@@ -58,7 +60,33 @@ export const SavingsGoalDetailSheet: React.FC<SavingsGoalDetailSheetProps> = ({
 
   return (
     <>
-      <Sheet visible={visible} onClose={onClose} title={goal.name}>
+      <Sheet
+        visible={visible}
+        onClose={onClose}
+        title={goal.name}
+        footer={
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <Button
+              title="تعديل"
+              variant="secondary"
+              onPress={() => {
+                onClose();
+                onEdit?.(goal);
+              }}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title="حذف"
+              variant="destructive"
+              onPress={() => {
+                haptics.impactLight();
+                setConfirmDeleteVisible(true);
+              }}
+              style={{ flex: 1 }}
+            />
+          </View>
+        }
+      >
         <View style={{ gap: spacing.lg, paddingBottom: spacing.xl }}>
           {/* Progress Visual */}
           <View style={{ gap: 10 }}>
@@ -86,7 +114,7 @@ export const SavingsGoalDetailSheet: React.FC<SavingsGoalDetailSheetProps> = ({
               >
                 {goal.percentage.toFixed(1)}٪
               </AppText>
-              {isComplete && (
+              {isComplete ? (
                 <View
                   style={[
                     styles.badge,
@@ -94,21 +122,25 @@ export const SavingsGoalDetailSheet: React.FC<SavingsGoalDetailSheetProps> = ({
                   ]}
                 >
                   <AppText variant="caption" tone="positive">
-                    🎉 اكتمل الهدف!
+                    🎉 اكتمل الهدف بنجاح!
                   </AppText>
                 </View>
+              ) : (
+                <AppText variant="caption" tone="secondary">
+                  متبقي {goal.remainingAmount} {goal.currency}
+                </AppText>
               )}
             </View>
           </View>
 
           {/* Stats Grid */}
-          <View style={[styles.statsGrid, { backgroundColor: colors.surface, borderRadius: radii.md }]}>
+          <View style={[styles.statsGrid, { backgroundColor: colors.surface, borderRadius: radii.md, borderColor: colors.border, borderWidth: 1 }]}>
             <View style={styles.statCell}>
-              <AppText variant="caption" tone="secondary">الهدف</AppText>
+              <AppText variant="caption" tone="secondary">المستهدف</AppText>
               <Money value={goal.targetAmount} currency={goal.currency} variant="amountSm" tone="primary" />
             </View>
             <View style={[styles.statCell, { borderStartWidth: StyleSheet.hairlineWidth, borderStartColor: colors.border }]}>
-              <AppText variant="caption" tone="secondary">المدخر</AppText>
+              <AppText variant="caption" tone="secondary">المدخر حالياً</AppText>
               <Money value={goal.currentAmount} currency={goal.currency} variant="amountSm" tone={isComplete ? 'positive' : 'primary'} />
             </View>
             <View style={[styles.statCell, { borderStartWidth: StyleSheet.hairlineWidth, borderStartColor: colors.border }]}>
@@ -145,39 +177,27 @@ export const SavingsGoalDetailSheet: React.FC<SavingsGoalDetailSheetProps> = ({
 
             {/* Note */}
             {goal.note && (
-              <View style={[styles.noteBox, { backgroundColor: colors.surface, borderRadius: radii.sm }]}>
+              <View style={[styles.noteBox, { backgroundColor: colors.surface, borderRadius: radii.sm, borderColor: colors.border, borderWidth: 1 }]}>
                 <AppText variant="caption" tone="secondary">ملاحظة</AppText>
                 <AppText variant="body" style={{ marginTop: 4 }}>{goal.note}</AppText>
               </View>
             )}
           </View>
 
-          {/* Currency note */}
-          <AppText variant="caption" tone="secondary" style={{ textAlign: 'center', opacity: 0.7 }}>
-            يعكس المبلغ المدخر رصيد حساب "{goal.account.name}" بالعملة {goal.currency}
-          </AppText>
-
-          {/* Delete Action */}
-          <Pressable
-            onPress={() => {
-              haptics.impactLight();
-              setConfirmDeleteVisible(true);
-            }}
-            style={[
-              styles.deleteBtn,
-              { borderColor: colors.negative, borderRadius: radii.md },
-            ]}
-          >
-            <Icon name="trash-outline" size={16} color={colors.negative} />
-            <AppText variant="body" tone="negative">حذف الهدف</AppText>
-          </Pressable>
+          {/* Explanation Banner */}
+          <View style={[styles.infoBanner, { backgroundColor: colors.sunken, borderRadius: radii.sm }]}>
+            <Icon name="information-circle-outline" size={16} color={colors.textSecondary} />
+            <AppText variant="caption" tone="secondary" style={{ flex: 1 }}>
+              رصيد حساب "{goal.account.name}" ({goal.currency}) هو المعيار التلقائي لإنجاز هذا الهدف. كل إيداع أو تحويل للحساب يقرّبك من الهدف.
+            </AppText>
+          </View>
         </View>
       </Sheet>
 
       <ConfirmDialog
         visible={confirmDeleteVisible}
         title="حذف الهدف"
-        message={`هل أنت متأكد من حذف هدف "${goal.name}"؟ لا يمكن التراجع عن هذا الإجراء.`}
+        message={`هل أنت متأكد من حذف هدف "${goal.name}"؟ لا يؤثر ذلك على رصيد الحساب المرتبط.`}
         confirmLabel="حذف"
         cancelLabel="إلغاء"
         isDestructive
@@ -225,13 +245,10 @@ const styles = StyleSheet.create({
   noteBox: {
     padding: 12,
   },
-  deleteBtn: {
+  infoBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
     gap: 8,
-    borderWidth: 1,
-    paddingVertical: 12,
-    marginTop: 8,
+    padding: 12,
   },
 });

@@ -55,6 +55,8 @@ export const PlanScreen: React.FC<PlanScreenProps> = ({
     'commitments'
   );
 
+  const [addGoalTrigger, setAddGoalTrigger] = useState(0);
+
 
   // Data states
   const [commitments, setCommitments] = useState<CommitmentResponseDto[]>([]);
@@ -180,33 +182,33 @@ export const PlanScreen: React.FC<PlanScreenProps> = ({
               } else if (activeSegment === 'budgets') {
                 setEditingBudget(null);
                 setAddBudgetVisible(true);
+              } else if (activeSegment === 'goals') {
+                setAddGoalTrigger((prev) => prev + 1);
               }
-              // goals tab has its own add button inside the tab
-              // forecast tab has no add action
             }}
             style={[
               styles.iconBtn,
               {
                 backgroundColor:
-                  activeSegment === 'commitments' || activeSegment === 'budgets'
-                    ? colors.forest
-                    : colors.sunken,
+                  activeSegment === 'forecast'
+                    ? colors.sunken
+                    : colors.forest,
                 borderColor:
-                  activeSegment === 'commitments' || activeSegment === 'budgets'
-                    ? colors.forest
-                    : colors.border,
+                  activeSegment === 'forecast'
+                    ? colors.border
+                    : colors.forest,
               },
             ]}
             accessibilityRole="button"
-            disabled={activeSegment === 'goals' || activeSegment === 'forecast'}
+            disabled={activeSegment === 'forecast'}
           >
             <Icon
               name="add"
               size={20}
               color={
-                activeSegment === 'commitments' || activeSegment === 'budgets'
-                  ? colors.onAction
-                  : colors.textTertiary
+                activeSegment === 'forecast'
+                  ? colors.textTertiary
+                  : colors.onAction
               }
             />
           </Pressable>
@@ -603,7 +605,7 @@ export const PlanScreen: React.FC<PlanScreenProps> = ({
           </>
         ) : activeSegment === 'goals' ? (
           /* ================= SAVINGS GOALS VIEW ================= */
-          <SavingsGoalsTab />
+          <SavingsGoalsTab addTrigger={addGoalTrigger} />
         ) : activeSegment === 'forecast' ? (
           /* ================= CASH FLOW FORECAST VIEW ================= */
           <ForecastTab />

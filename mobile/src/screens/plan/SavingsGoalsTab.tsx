@@ -5,7 +5,6 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
-  ActivityIndicator,
 } from 'react-native';
 import { useTheme } from '../../theme';
 import {
@@ -24,7 +23,11 @@ import { haptics } from '../../utils/haptics';
 import { AddSavingsGoalSheet } from './AddSavingsGoalSheet';
 import { SavingsGoalDetailSheet } from './SavingsGoalDetailSheet';
 
-export const SavingsGoalsTab: React.FC = () => {
+interface SavingsGoalsTabProps {
+  addTrigger?: number;
+}
+
+export const SavingsGoalsTab: React.FC<SavingsGoalsTabProps> = ({ addTrigger }) => {
   const { colors, radii, spacing } = useTheme();
 
   const [goals, setGoals] = useState<SavingsGoalResponseDto[]>([]);
@@ -33,6 +36,7 @@ export const SavingsGoalsTab: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [addVisible, setAddVisible] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<SavingsGoalResponseDto | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<SavingsGoalResponseDto | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
 
@@ -52,6 +56,14 @@ export const SavingsGoalsTab: React.FC = () => {
   useEffect(() => {
     loadGoals();
   }, [loadGoals]);
+
+  // Open add sheet when triggered by parent header
+  useEffect(() => {
+    if (addTrigger && addTrigger > 0) {
+      setEditingGoal(null);
+      setAddVisible(true);
+    }
+  }, [addTrigger]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -114,16 +126,22 @@ export const SavingsGoalsTab: React.FC = () => {
               tone="secondary"
               style={{ textAlign: 'center', marginBottom: 16 }}
             >
-              حدد هدف ادخاري وربطه بحساب لمتابعة تقدمك نحو تحقيقه
+              حدد أهدافك المالية (سيارة، سفر، طوارئ) واربطها بحساباتك لتتابع نسبة تحقيقها بدقة
             </AppText>
-            <Button title="إضافة هدف" onPress={() => setAddVisible(true)} />
+            <Button
+              title="إضافة هدف جديد"
+              onPress={() => {
+                setEditingGoal(null);
+                setAddVisible(true);
+              }}
+            />
           </View>
         ) : (
           <View style={{ gap: spacing.md, marginTop: spacing.sm }}>
             {goals.map((goal) => {
               const pct = Math.min(goal.percentage, 100);
               const isComplete = goal.percentage >= 100;
-              const meterColor = isComplete ? colors.forest : colors.forest;
+              const meterColor = isComplete ? colors.positive : colors.forest;
 
               return (
                 <Pressable
@@ -147,7 +165,7 @@ export const SavingsGoalsTab: React.FC = () => {
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 2 }}>
                         <AppText variant="caption" tone="secondary">
-                          الهدف
+                          المستهدف
                         </AppText>
                         <Money
                           value={goal.targetAmount}
@@ -194,7 +212,7 @@ export const SavingsGoalsTab: React.FC = () => {
                         <AppText
                           variant="caption"
                           style={{
-                            color: isComplete ? colors.positive : colors.textSecondary,
+                            color: isComplete ? colors.positive : colors.textPrimary,
                             fontWeight: '700',
                           }}
                         >
@@ -209,7 +227,7 @@ export const SavingsGoalsTab: React.FC = () => {
                           value={goal.remainingAmount}
                           currency={goal.currency}
                           variant="amountSm"
-                          tone={isComplete ? 'positive' : 'primary'}
+                          tone={isComplete ? 'positive' : 'secondary'}
                         />
                       </View>
                     </View>
@@ -219,7 +237,7 @@ export const SavingsGoalsTab: React.FC = () => {
                       <AppText
                         variant="caption"
                         tone="secondary"
-                        style={{ marginTop: 6 }}
+                        style={{ marginTop: 8 }}
                       >
                         الموعد المستهدف:{' '}
                         {new Date(goal.targetDate).toLocaleDateString('ar-EG', {
@@ -237,7 +255,10 @@ export const SavingsGoalsTab: React.FC = () => {
             <Button
               title="إضافة هدف جديد"
               variant="secondary"
-              onPress={() => setAddVisible(true)}
+              onPress={() => {
+                setEditingGoal(null);
+                setAddVisible(true);
+              }}
               style={{ marginTop: spacing.xs }}
             />
           </View>
@@ -248,8 +269,15 @@ export const SavingsGoalsTab: React.FC = () => {
 
       <AddSavingsGoalSheet
         visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={loadGoals}
+        goalToEdit={editingGoal}
+        onClose={() => {
+          setAddVisible(false);
+          setEditingGoal(null);
+        }}
+        onSuccess={() => {
+          setEditingGoal(null);
+          loadGoals();
+        }}
       />
 
       <SavingsGoalDetailSheet
@@ -258,6 +286,11 @@ export const SavingsGoalsTab: React.FC = () => {
         onClose={() => {
           setDetailVisible(false);
           setSelectedGoal(null);
+        }}
+        onEdit={(g) => {
+          setDetailVisible(false);
+          setEditingGoal(g);
+          setAddVisible(true);
         }}
         onUpdated={loadGoals}
       />
