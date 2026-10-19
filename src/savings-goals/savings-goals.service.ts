@@ -15,27 +15,6 @@ export class SavingsGoalsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * TEMPORARY: The Prisma client DLL (query_engine-windows.dll.node) is locked
-   * by a running Node process, so `prisma generate` cannot regenerate the client
-   * types. The `savingsGoal` model exists in schema.prisma and migrations but
-   * is not yet present in the generated TypeScript types.
-   *
-   * This getter casts to `any` so that Jest (ts-jest) can compile and run the
-   * service tests. At runtime the actual Prisma Client object (injected by
-   * PrismaModule) will have `savingsGoal` — it just isn't reflected in the
-   * stale generated types.
-   *
-   * TODO: After the DLL lock is released (close VS Code / the IDE and run
-   * `pnpm prisma:generate`), remove this getter and replace every `this.db`
-   * reference with `this.prisma`. The migration will be trivial because the
-   * API surface is identical.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private get db(): any {
-    return this.prisma;
-  }
-
-  /**
    * Maps a raw savings_goal + account record to the response DTO.
    *
    * Progress (currentAmount) is derived from the linked account's currentBalance,
@@ -89,7 +68,7 @@ export class SavingsGoalsService {
     userId: string,
     includeArchived: boolean = false,
   ): Promise<SavingsGoalResponseDto[]> {
-    const goals = await this.db.savingsGoal.findMany({
+    const goals = await this.prisma.savingsGoal.findMany({
       where: {
         userId,
         ...(includeArchived ? {} : { isArchived: false }),
@@ -105,7 +84,7 @@ export class SavingsGoalsService {
     userId: string,
     goalId: string,
   ): Promise<SavingsGoalResponseDto> {
-    const goal = await this.db.savingsGoal.findFirst({
+    const goal = await this.prisma.savingsGoal.findFirst({
       where: { id: goalId, userId },
       include: this.includeAccount,
     });
@@ -133,7 +112,7 @@ export class SavingsGoalsService {
     }
 
     // Prevent duplicate active goals on the same account
-    const existingGoal = await this.db.savingsGoal.findFirst({
+    const existingGoal = await this.prisma.savingsGoal.findFirst({
       where: { accountId: dto.accountId, userId, isArchived: false },
     });
 
@@ -144,7 +123,7 @@ export class SavingsGoalsService {
       );
     }
 
-    const goal = await this.db.savingsGoal.create({
+    const goal = await this.prisma.savingsGoal.create({
       data: {
         userId,
         accountId: dto.accountId,
@@ -165,7 +144,7 @@ export class SavingsGoalsService {
     dto: UpdateSavingsGoalDto,
   ): Promise<SavingsGoalResponseDto> {
     // Ownership check
-    const existing = await this.db.savingsGoal.findFirst({
+    const existing = await this.prisma.savingsGoal.findFirst({
       where: { id: goalId, userId },
     });
 
@@ -178,7 +157,7 @@ export class SavingsGoalsService {
     // (because progress = account.currentBalance). If a user wants to track a
     // different account, they should archive this goal and create a new one.
 
-    const updated = await this.db.savingsGoal.update({
+    const updated = await this.prisma.savingsGoal.update({
       where: { id: goalId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
@@ -201,7 +180,7 @@ export class SavingsGoalsService {
     userId: string,
     goalId: string,
   ): Promise<{ success: boolean; message: string }> {
-    const existing = await this.db.savingsGoal.findFirst({
+    const existing = await this.prisma.savingsGoal.findFirst({
       where: { id: goalId, userId },
     });
 
@@ -211,7 +190,7 @@ export class SavingsGoalsService {
 
     // Deleting a savings goal does not affect the linked account or its balance.
     // The account continues to exist and hold its funds independently.
-    await this.db.savingsGoal.delete({
+    await this.prisma.savingsGoal.delete({
       where: { id: goalId },
     });
 
