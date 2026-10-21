@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv';
-dotenv.config({ override: true });
+// Keep deployment-provided variables (for example Vercel's secrets) authoritative.
+dotenv.config();
 
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';

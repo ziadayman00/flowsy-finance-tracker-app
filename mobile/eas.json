@@ -6,7 +6,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://flowsy-api.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-VERCEL-DOMAIN.vercel.app/api/v1"
       },
       "android": {
         "buildType": "apk"
@@ -14,7 +14,7 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://flowsy-api.onrender.com/api/v1"
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-VERCEL-DOMAIN.vercel.app/api/v1"
       }
     }
   }
